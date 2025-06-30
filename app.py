@@ -1426,14 +1426,18 @@ def show_quiz():
     st.markdown(f'<div class="main-header"><h1>🏆 Quiz: {module["title"]}</h1></div>', unsafe_allow_html=True)
     
     # Get quiz questions
-    questions = get_quiz_questions(module_id)
-    
-    if not questions:
-        st.warning("No quiz questions available for this module yet.")
-        if st.button("← Back to Module"):
-            st.session_state.current_page = "module_content"
-            st.rerun()
-        return
+questions = get_quiz_questions(module_id)
+current_q = st.session_state.current_question
+
+if questions:
+    question = questions[current_q]
+    st.markdown(f'<div class="quiz-question"><h4>{question["question"]}</h4></div>', unsafe_allow_html=True)
+    selected_answer = st.radio(
+        "Choose your answer:",
+        options=list(question['options'].keys()),
+        format_func=lambda x: f"{x}. {question['options'][x]}",
+        key=f"q_{current_q}"
+    )
     
     # Quiz logic
     if not st.session_state.quiz_started:
