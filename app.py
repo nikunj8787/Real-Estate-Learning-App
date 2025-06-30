@@ -2761,9 +2761,13 @@ def show_quiz_management():
                                 
                                 if st.button(f"✅ Add Question {i}", key=f"add_ai_q_{i}"):
                                     if add_quiz_question(
-                                        selected_module[0],
-                                        q['question'],
-                                        q['option_a'],
-                                        q['option_b'],
-                                        q['option_c'],
-                                        q['option_d'],
+    selected_module[0],
+    q['question'],
+    q['option_a'],
+    q['option_b'],
+    q['option_c'],
+    q['option_d'],
+    q['correct_answer'],
+    q['explanation']
+):
+
