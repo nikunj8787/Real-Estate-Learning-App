@@ -1989,10 +1989,18 @@ def show_quiz_management():
                 
                 if st.form_submit_button("➕ Add Question"):
                     if question and option_a and option_b and option_c and option_d:
-                        if add_quiz_question(selected_module[0], question, option_a, option_b, 
-                                           option_c, option_d, correct_answer, explanation):
-                            st.success("Question added successfully!")
-                            st.rerun()
+                       if add_quiz_question(
+    selected_module[0],
+    q['question'],
+    q['option_a'],
+    q['option_b'],
+    q['option_c'],
+    q['option_d'],
+    q['correct_answer'],
+    q['explanation']
+):
+    st.success(f"Question {i} added successfully!")
+    st.rerun()
                         else:
                             st.error("Failed to add question")
                     else:
