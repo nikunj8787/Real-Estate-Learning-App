@@ -50,12 +50,46 @@ if 'quiz_started' not in st.session_state:
 # Database setup
 DATABASE_PATH = "realestate_guru.db"
 
+def migrate_database():
+    """Migrate existing database to add missing columns"""
+    conn = sqlite3.connect(DATABASE_PATH)
+    cursor = conn.cursor()
+    
+    try:
+        # Check if points column exists
+        cursor.execute("PRAGMA table_info(users)")
+        columns = [col[1] for col in cursor.fetchall()]
+        
+        if 'points' not in columns:
+            cursor.execute("ALTER TABLE users ADD COLUMN points INTEGER DEFAULT 0")
+            
+        if 'badges' not in columns:
+            cursor.execute("ALTER TABLE users ADD COLUMN badges TEXT DEFAULT '[]'")
+            
+        if 'streak_days' not in columns:
+            cursor.execute("ALTER TABLE users ADD COLUMN streak_days INTEGER DEFAULT 0")
+        
+        # Check if youtube_url column exists in modules
+        cursor.execute("PRAGMA table_info(modules)")
+        module_columns = [col[1] for col in cursor.fetchall()]
+        
+        if 'youtube_url' not in module_columns:
+            cursor.execute("ALTER TABLE modules ADD COLUMN youtube_url TEXT")
+        
+        conn.commit()
+        print("Database migration completed successfully")
+        
+    except Exception as e:
+        print(f"Migration error: {e}")
+    finally:
+        conn.close()
+
 def init_database():
     """Initialize database with comprehensive tables and content"""
     conn = sqlite3.connect(DATABASE_PATH)
     cursor = conn.cursor()
     
-    # Create users table
+    # Create users table with all required columns
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -72,7 +106,7 @@ def init_database():
         )
     """)
     
-    # Create modules table
+    # Create modules table with all required columns
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS modules (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -155,24 +189,17 @@ def init_database():
     if admin_count == 0:
         admin_password = hashlib.sha256("admin123".encode()).hexdigest()
         cursor.execute("""
-            INSERT INTO users (username, email, password, role, created_date, points, badges)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        """, ("admin", "admin@realestateguruapp.com", admin_password, "admin", datetime.now().isoformat(), 1000, '["Admin Master", "System Creator"]'))
+            INSERT INTO users (username, email, password, role, created_date, points, badges, streak_days)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """, ("admin", "admin@realestateguruapp.com", admin_password, "admin", datetime.now().isoformat(), 1000, '["Admin Master", "System Creator"]', 1))
     
     # Insert comprehensive modules with rich content if they don't exist
     cursor.execute("SELECT COUNT(*) FROM modules")
     module_count = cursor.fetchone()[0]
     
     if module_count == 0:
-        # Module contents (same as before but with YouTube URLs)
-        modules_data = [
-            {
-                'title': 'Real Estate Fundamentals',
-                'description': 'Introduction to real estate basics, stakeholders, and market overview',
-                'difficulty': 'Beginner',
-                'category': 'Fundamentals',
-                'youtube_url': 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
-                'content': """
+        # Module 1: Real Estate Fundamentals
+        fundamentals_content = """
 # Real Estate Fundamentals
 
 ## 1. Introduction to Real Estate
@@ -228,16 +255,24 @@ The Indian real estate market is valued at over **$200 billion** and growing at 
 - **Smart Cities**: 100 smart cities mission
 - **Green Buildings**: IGBC and GRIHA certifications
 - **PropTech**: Digital platforms transforming transactions
-""",
-                'order_index': 1
-            },
-            {
-                'title': 'Legal Framework & RERA',
-                'description': 'Comprehensive guide to RERA, legal compliance, and regulatory framework',
-                'difficulty': 'Intermediate',
-                'category': 'Legal Framework',
-                'youtube_url': 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
-                'content': """
+
+## 5. Investment Basics
+
+### Key Factors to Consider:
+- **Location**: Connectivity and infrastructure
+- **Legal Clearances**: Proper documentation
+- **Builder Reputation**: Track record and credibility
+- **Market Timing**: Entry and exit strategies
+
+### Risk Factors:
+- **Market Volatility**: Price fluctuations
+- **Regulatory Changes**: Policy impacts
+- **Liquidity Constraints**: Time to sell
+- **Quality Issues**: Construction defects
+"""
+
+        # Module 2: Legal Framework & RERA
+        rera_content = """
 # Legal Framework & RERA
 
 ## 1. Real Estate (Regulation and Development) Act, 2016
@@ -279,47 +314,610 @@ RERA was enacted to protect homebuyer interests and promote transparency in real
 - **Project details** on RERA website
 - **Financial information** including approvals
 - **Timeline updates** through quarterly reports
-""",
-                'order_index': 2
-            }
+
+## 4. RERA Complaint Process
+
+### Steps to File Complaint:
+1. **Gather Documents**: Sale agreement, payment receipts, correspondence
+2. **Visit RERA Website**: Access state RERA portal
+3. **File Online**: Submit complaint with supporting documents
+4. **Pay Fees**: Nominal filing fees required
+5. **Attend Hearing**: Appear before RERA authority
+6. **Get Order**: Receive binding decision
+
+### Common Complaint Types:
+- **Delivery Delays**: Non-adherence to possession timelines
+- **Quality Issues**: Construction defects and poor workmanship
+- **Hidden Charges**: Undisclosed fees and costs
+- **Misleading Advertisements**: False promises and claims
+
+## 5. Penalties and Compliance
+
+### Developer Penalties:
+- **Interest Payment**: 10% per annum for delays
+- **Project Deregistration**: For serious violations
+- **Criminal Action**: For fraudulent practices
+- **Compensation Orders**: Monetary relief to buyers
+
+### Compliance Requirements:
+- **Quarterly Reports**: Progress and financial updates
+- **Escrow Maintenance**: 70% fund allocation
+- **Quality Standards**: BIS and approved specifications
+- **Timely Completion**: As per registered timeline
+"""
+
+        # Module 3: Property Measurements & Standards
+        measurements_content = """
+# Property Measurements & Standards
+
+## 1. Understanding Property Areas
+
+### Carpet Area:
+- **Definition**: Actual usable floor area within walls
+- **Includes**: Rooms, kitchen, bathrooms, balconies
+- **Excludes**: Walls, common areas, utility shafts
+- **Legal Standard**: RERA mandates sales based on carpet area only
+
+### Built-up Area:
+- **Formula**: Carpet Area + Wall Thickness + Balcony Area
+- **Includes**: Interior walls and columns within apartment
+- **Typical Addition**: 10-15% over carpet area
+- **Usage**: Internal planning and design calculations
+
+### Super Built-up Area:
+- **Formula**: Built-up Area + Proportionate Common Area
+- **Includes**: Lobbies, elevators, staircases, amenities
+- **Typical Addition**: 25-40% over carpet area
+- **Note**: No longer legally valid for sales post-RERA
+
+## 2. BIS Standards for Measurement (IS 3861:2002)
+
+### Measurement Principles:
+- **Wall-to-Wall**: Carpet area measured from inner wall faces
+- **Balcony Calculation**: 50% weightage in carpet area
+- **Common Areas**: Pro-rata distribution basis
+- **Accuracy Standards**: ±2% tolerance allowed
+
+### Loading Factor:
+- **Definition**: Percentage difference between super built-up and carpet area
+- **Formula**: (Super Built-up - Carpet) / Carpet × 100
+- **Typical Range**: 15-40% depending on project type
+- **Impact**: Affects actual usable space per rupee
+
+## 3. Floor Plan Reading Skills
+
+### Basic Elements:
+- **Walls**: Thick black lines showing structure
+- **Doors**: Breaks in walls with swing direction
+- **Windows**: Double lines with glass indication
+- **Fixtures**: Kitchen, bathroom, electrical symbols
+
+### Room Analysis:
+- **Dimensions**: Length × Width in feet/meters
+- **Proportions**: Square vs. rectangular layouts
+- **Natural Light**: Window placement and sizes
+- **Ventilation**: Cross-ventilation possibilities
+
+### Common Symbols:
+- **WC**: Water closet/toilet
+- **K**: Kitchen area
+- **BR**: Bedroom
+- **LR**: Living room
+- **DB**: Distribution board
+- **AC**: Air conditioning provision
+
+## 4. Measurement Verification
+
+### For Buyers:
+- **Independent Survey**: Hire qualified surveyor
+- **Dimension Check**: Verify all room measurements
+- **Area Calculations**: Cross-check developer calculations
+- **Document Deviations**: Record any differences found
+
+### Red Flags:
+- **Area Shortfall**: Actual less than promised
+- **Layout Changes**: Unauthorized plan modifications
+- **Quality Variations**: Substandard construction materials
+- **Hidden Deductions**: Undisclosed area exclusions
+
+## 5. Legal Remedies for Discrepancies
+
+### RERA Provisions:
+- **Area Compensation**: Refund for shortfall areas
+- **Interest Payment**: On excess amount paid
+- **Project Completion**: Force adherence to approved plans
+- **Quality Standards**: Ensure BIS compliance
+
+### Calculation Example:
+If carpet area promised: 1000 sq.ft
+If carpet area delivered: 950 sq.ft
+Shortfall: 50 sq.ft (5%)
+Compensation: (50/1000) × Total Amount Paid
+"""
+
+        # Module 4: Valuation & Finance
+        valuation_content = """
+# Property Valuation & Finance
+
+## 1. Property Valuation Methods
+
+### Comparative Market Analysis (CMA):
+- **Methodology**: Compare with similar recent sales
+- **Key Factors**: Location, size, age, amenities, condition
+- **Data Sources**: Registration records, broker databases, online platforms
+- **Accuracy Range**: ±10-15% in established markets
+- **Best Applications**: Residential properties in active markets
+
+### Income Approach:
+- **Formula**: Property Value = Net Operating Income ÷ Capitalization Rate
+- **Components**: 
+  - Gross Rental Income
+  - Operating Expenses (maintenance, taxes, management)
+  - Capitalization Rate (market-derived)
+- **Applications**: Investment properties, commercial buildings
+- **Yield Calculations**:
+  - Gross Rental Yield = (Annual Rent ÷ Property Price) × 100
+  - Net Rental Yield = (Annual Rent - Expenses) ÷ Property Price × 100
+
+### Cost Approach:
+- **Formula**: Land Value + Building Cost - Depreciation
+- **Components**:
+  - Current land rates in the area
+  - Construction cost per sq.ft
+  - Age-based depreciation (2-3% annually)
+- **Applications**: New constructions, unique properties, insurance valuations
+- **Depreciation Factors**: Physical deterioration, functional obsolescence, economic factors
+
+## 2. Factors Affecting Property Values
+
+### Location Factors (Weight: 40-50%):
+- **Connectivity**: Metro, highways, airports proximity
+- **Social Infrastructure**: Schools, hospitals, shopping centers
+- **Employment Hubs**: IT parks, business districts, industrial areas
+- **Future Development**: Planned infrastructure projects
+
+### Property-Specific Factors (Weight: 30-40%):
+- **Size and Layout**: Carpet area, room configuration
+- **Floor and Facing**: Higher floors, east/north facing premium
+- **Age and Condition**: Newer properties command premium
+- **Amenities**: Swimming pool, gym, security, parking
+
+### Market Factors (Weight: 10-20%):
+- **Supply-Demand**: Inventory levels vs. absorption rates
+- **Interest Rates**: Impact on affordability and demand
+- **Government Policies**: Tax benefits, subsidies, regulations
+- **Economic Conditions**: Employment levels, income growth
+
+## 3. Home Loan Fundamentals
+
+### Loan-to-Value (LTV) Ratio:
+- **Definition**: Loan amount as percentage of property value
+- **Typical Ranges**:
+  - Properties up to ₹30 lakh: 90% LTV
+  - Properties ₹30-75 lakh: 80% LTV
+  - Properties above ₹75 lakh: 75% LTV
+- **Down Payment**: 100% - LTV ratio
+- **Higher LTV Criteria**: First-time buyers, salaried professionals
+
+### Interest Rate Structures:
+- **Fixed Rate**: Constant throughout loan tenure (9-11% currently)
+- **Floating Rate**: Varies with market conditions (8.5-10.5% currently)
+- **Hybrid**: Fixed for initial years, then floating
+- **Factors Affecting Rates**: Credit score, income, property type, loan amount
+
+### EMI Calculation:
+**Formula**: EMI = P × r × (1+r)^n ÷ ((1+r)^n - 1)
+Where:
+- P = Principal loan amount
+- r = Monthly interest rate (annual rate ÷ 12)
+- n = Number of monthly installments
+
+**Example**:
+- Loan Amount: ₹50 lakh
+- Interest Rate: 9% per annum
+- Tenure: 20 years
+- Monthly EMI: ₹44,986
+
+## 4. Property Taxation in India
+
+### Stamp Duty:
+- **Purpose**: State government revenue
+- **Rates**: 3-10% of property value (varies by state)
+- **Calculation Base**: Agreement value or circle rate, whichever is higher
+- **Payment**: Before registration at sub-registrar office
+- **Recent Changes**: Digital stamp duty in many states
+
+### Registration Charges:
+- **Rate**: 1-2% of property value
+- **Maximum Limit**: ₹30,000 in most states
+- **Process**: Simultaneous with stamp duty payment
+- **Documents Required**: Sale deed, NOCs, approvals
+
+### Goods and Services Tax (GST):
+- **Under Construction**: 5% (with ITC) or 1% (without ITC)
+- **Ready Properties**: No GST on resale
+- **Commercial Properties**: 12% GST applicable
+- **Input Tax Credit**: Available for business purchases
+
+### Capital Gains Tax:
+- **Short-term** (within 2 years): Taxed as per income slab
+- **Long-term** (after 2 years): 20% with indexation benefit
+- **Indexation**: Cost inflation index adjustment for inflation
+- **Exemptions**:
+  - Section 54: Purchase another house within 2 years
+  - Section 54EC: Invest in specified bonds within 6 months
+
+## 5. Investment Analysis Metrics
+
+### Return Calculations:
+- **Rental Yield**: (Annual Rent ÷ Property Price) × 100
+- **Capital Appreciation**: (Current Value - Purchase Price) ÷ Purchase Price × 100
+- **Total Return**: Rental Yield + Capital Appreciation
+- **IRR**: Internal Rate of Return considering all cash flows
+
+### Risk Assessment:
+- **Market Risk**: Property price volatility
+- **Liquidity Risk**: Time and cost to sell
+- **Rental Risk**: Vacancy periods, rent collection issues
+- **Regulatory Risk**: Policy changes affecting real estate
+
+### Investment Strategies:
+- **Buy-to-Let**: Purchase for rental income
+- **Fix-and-Flip**: Renovate and resell quickly
+- **Long-term Hold**: Capital appreciation over years
+- **REITs**: Real Estate Investment Trusts for portfolio diversification
+"""
+
+        # Module 5: Land & Development Laws
+        development_content = """
+# Land & Development Laws
+
+## 1. General Development Control Regulations (GDCR)
+
+### Purpose and Framework:
+- **Objective**: Systematic urban development and construction control
+- **Scope**: Building specifications, land use, infrastructure norms
+- **Authority**: State governments and urban development authorities
+- **Compliance**: Mandatory for all development activities
+
+### Key GDCR Components:
+
+#### Setback Requirements:
+- **Front Setback**: 3-6 meters based on road width
+- **Side Setbacks**: 1.5-3 meters for each side
+- **Rear Setback**: 3-6 meters from back boundary
+- **Special Cases**: Corner plots, wide roads have different norms
+
+#### Height Restrictions:
+- **Residential**: 15-45 meters depending on road width
+- **Commercial**: Higher limits with additional approvals
+- **Special Buildings**: Airports, defense areas have specific limits
+- **Exceptions**: Lift rooms, water tanks excluded from height
+
+#### Parking Requirements:
+- **Residential**: 1 space per dwelling unit minimum
+- **Commercial**: 1 space per 70-100 sq.m built-up area
+- **Visitor Parking**: Additional 20% of required spaces
+- **Basement Parking**: Allowed with proper ventilation
+
+## 2. Floor Space Index (FSI) / Floor Area Ratio (FAR)
+
+### Understanding FSI:
+- **Definition**: Total floor area of all floors ÷ Plot area
+- **Example**: 1000 sq.m plot with FSI 2.0 = 2000 sq.m total construction possible
+- **Significance**: Controls building density and urban development
+- **Variation**: Different FSI for different zones and cities
+
+### FSI Categories:
+
+#### Basic FSI:
+- **Source**: As per zoning regulations
+- **Residential Zones**: 1.0-2.5 typically
+- **Commercial Zones**: 1.5-4.0 typically
+- **Industrial Zones**: 1.0-1.5 typically
+
+#### Premium FSI:
+- **Concept**: Additional FSI available against payment
+- **Rates**: Market-determined premium charges
+- **Utilization**: Subject to infrastructure capacity
+- **Limits**: Maximum FSI caps even with premium
+
+#### Incentive FSI:
+- **Affordable Housing**: Additional 0.5-1.0 FSI
+- **Green Buildings**: LEED/GRIHA certified projects
+- **Transit-Oriented Development**: Near metro stations
+- **Heritage Conservation**: For preserving old structures
+
+### City-wise FSI Examples:
+- **Mumbai**: 1.33 basic, up to 4.0 with premiums and TDR
+- **Delhi**: 1.2-3.5 depending on zone and road width
+- **Bangalore**: 1.75-2.5 with premiums available
+- **Pune**: 1.0-2.0 with premium FSI options
+- **Chennai**: 1.5-2.5 depending on location
+
+## 3. Transfer of Development Rights (TDR)
+
+### TDR Concept:
+- **Definition**: Transferable certificate representing unused development potential
+- **Purpose**: Compensate landowners for public land acquisition
+- **Mechanism**: Generate TDR from donor site, utilize at receiver site
+- **Validity**: Time-bound usage (typically 10 years)
+
+### TDR Generation Sources:
+
+#### Reservation TDR:
+- **Source**: Land acquired for roads, parks, schools
+- **Calculation**: Market value ÷ Ready reckoner rate
+- **Compensation**: Alternative to monetary payment
+- **Utilization**: Designated receiving zones
+
+#### Slum TDR:
+- **Source**: Slum rehabilitation projects
+- **Benefit**: Incentive for private developers
+- **Calculation**: Based on rehabilitated area
+- **Conditions**: Minimum FSI consumption requirements
+
+#### Heritage TDR:
+- **Source**: Preserving heritage structures
+- **Incentive**: Encourage conservation efforts
+- **Calculation**: Foregone development potential
+- **Usage**: Transfer to modern development zones
+
+#### Amenity TDR:
+- **Source**: Providing public amenities
+- **Examples**: Community halls, dispensaries, gardens
+- **Benefit**: Additional development rights
+- **Conditions**: Maintenance obligations
+
+### TDR Utilization Process:
+1. **TDR Certificate**: Issued by competent authority
+2. **TDR Banking**: Deposited in government TDR bank
+3. **Market Transaction**: TDR bought/sold in market
+4. **Utilization Application**: Submit for building approval
+5. **Verification**: Authority verifies TDR authenticity
+6. **Approval**: Building plan approved with TDR usage
+
+## 4. Land Use Zoning and Planning
+
+### Zoning Categories:
+
+#### Residential Zones:
+- **R-1**: Low density (detached houses)
+- **R-2**: Medium density (row houses, low-rise apartments)
+- **R-3**: High density (mid-rise apartments)
+- **R-4**: Very high density (high-rise apartments)
+
+#### Commercial Zones:
+- **C-1**: Neighborhood commercial (local shops)
+- **C-2**: Community commercial (markets, offices)
+- **C-3**: City commercial (business districts)
+- **C-4**: Regional commercial (malls, corporate offices)
+
+#### Industrial Zones:
+- **I-1**: Light industrial (IT parks, electronics)
+- **I-2**: General industrial (manufacturing, processing)
+- **I-3**: Heavy industrial (chemicals, steel)
+- **Special Zones**: SEZ, export promotion zones
+
+#### Mixed-Use Development:
+- **Concept**: Combination of residential and commercial
+- **Ratios**: Specified percentage for each use
+- **Benefits**: Reduced travel, vibrant communities
+- **Examples**: Integrated townships, smart cities
+
+### Land Use Conversion:
+- **Process**: Application to town planning authority
+- **Requirements**: 
+  - Feasibility study and impact assessment
+  - Public notice and objection period
+  - Infrastructure adequacy certificate
+  - Environmental clearance if required
+- **Charges**: Conversion charges and betterment levy
+- **Timeline**: 6-12 months for approval
+
+## 5. Approvals and Clearances
+
+### Statutory Approvals:
+
+#### Building Plan Approval:
+- **Authority**: Municipal corporation/development authority
+- **Documents**: 
+  - Architectural and structural drawings
+  - Site plan and survey
+  - Ownership documents
+  - NOCs from various departments
+- **Timeline**: 30-60 days for standard projects
+- **Validity**: 3 years with possible extensions
+
+#### Environmental Clearances:
+- **EIA**: Environmental Impact Assessment for large projects (>20,000 sq.m)
+- **Process**: Impact study, public hearing, expert committee review
+- **Timeline**: 6-12 months for complex projects
+- **Conditions**: Monitoring and compliance requirements
+
+#### Sectoral Clearances:
+- **Fire NOC**: Fire safety and emergency evacuation
+- **Airport Authority**: Height clearance near airports
+- **Forest Department**: If affecting forest land
+- **Pollution Control**: Air and water pollution norms
+- **Archaeological Survey**: Near heritage sites
+
+### Utility Connections:
+
+#### Water Supply:
+- **Source**: Municipal corporation or water authority
+- **Requirements**: Approved building plan, completion certificate
+- **Capacity**: Based on number of units and usage norms
+- **Charges**: Connection fees and security deposit
+
+#### Electricity Connection:
+- **Provider**: State electricity board
+- **Load Calculation**: Based on built-up area and usage
+- **Infrastructure**: Transformer, distribution network adequacy
+- **Timeline**: 15-30 days after application
+
+#### Sewerage and Drainage:
+- **Connection**: Municipal sewerage network
+- **Treatment**: On-site or centralized STP requirements
+- **Storm Water**: Separate drainage for rainwater
+- **Compliance**: Pollution control board norms
+
+## 6. Compliance and Penalties
+
+### Common Violations:
+- **Unauthorized Construction**: Beyond approved FSI/plans
+- **Setback Violations**: Insufficient open spaces
+- **Height Violations**: Exceeding permitted limits
+- **Land Use Violations**: Non-conforming activities
+- **Environmental Non-compliance**: Violation of clearance conditions
+
+### Penalty Structure:
+- **Monetary Penalties**: Fines based on violation severity
+- **Regularization**: Payment for unauthorized construction
+- **Stop Work Orders**: Halt construction activities
+- **Demolition**: For serious structural violations
+- **Criminal Action**: For fraud and gross violations
+
+### Compliance Benefits:
+- **Legal Security**: Clear title and occupancy rights
+- **Financing**: Bank loan eligibility
+- **Resale Value**: Higher market acceptance
+- **Insurance**: Coverage for compliant properties
+- **Utility Connections**: Authorized service connections
+"""
+
+        modules_data = [
+            ('Real Estate Fundamentals', 'Introduction to real estate basics, stakeholders, and market overview', 'Beginner', 'Fundamentals', fundamentals_content, 'https://www.youtube.com/watch?v=dQw4w9WgXcQ', 1),
+            ('Legal Framework & RERA', 'Comprehensive guide to RERA, legal compliance, and regulatory framework', 'Intermediate', 'Legal Framework', rera_content, 'https://www.youtube.com/watch?v=dQw4w9WgXcQ', 2),
+            ('Property Measurements & Standards', 'Carpet area vs built-up area, BIS standards, and floor plan reading', 'Beginner', 'Measurements', measurements_content, 'https://www.youtube.com/watch?v=dQw4w9WgXcQ', 3),
+            ('Valuation & Finance', 'Property valuation methods, home loans, and taxation', 'Intermediate', 'Finance', valuation_content, 'https://www.youtube.com/watch?v=dQw4w9WgXcQ', 4),
+            ('Land & Development Laws', 'GDCR, municipal bylaws, FSI/TDR calculations, and zoning', 'Advanced', 'Legal Framework', development_content, 'https://www.youtube.com/watch?v=dQw4w9WgXcQ', 5)
         ]
         
         for module in modules_data:
             cursor.execute("""
                 INSERT INTO modules (title, description, difficulty, category, content, youtube_url, order_index, created_date, active)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)
-            """, (
-                module['title'],
-                module['description'],
-                module['difficulty'],
-                module['category'],
-                module['content'],
-                module['youtube_url'],
-                module['order_index'],
-                datetime.now().isoformat()
-            ))
+            """, (*module, datetime.now().isoformat()))
     
-    # Insert sample quiz questions if they don't exist
+    # Insert comprehensive quiz questions if they don't exist
     cursor.execute("SELECT COUNT(*) FROM quizzes")
     quiz_count = cursor.fetchone()[0]
     
     if quiz_count == 0:
-        sample_questions = [
-            # Real Estate Fundamentals Quiz (Module ID 1)
+        quiz_questions = [
+            # Real Estate Fundamentals (Module 1) - 20 questions
             (1, "What does real estate primarily encompass?", "Only land", "Land and permanent structures", "Only buildings", "Movable property", "B", "Real estate includes both land and any permanent structures attached to it."),
             (1, "Which regulatory body primarily governs real estate in India?", "SEBI", "RBI", "RERA", "IRDA", "C", "RERA (Real Estate Regulatory Authority) is the primary regulatory body for real estate in India."),
             (1, "What is a freehold property?", "Temporary ownership", "Absolute ownership", "Rental property", "Shared ownership", "B", "Freehold means absolute ownership of both land and building."),
             (1, "Which type of property is NOT mentioned as residential?", "Apartments", "Warehouses", "Villas", "Studio Apartments", "B", "Warehouses are commercial/industrial properties, not residential."),
             (1, "What is the approximate value of the Indian real estate market?", "$100 billion", "$200 billion", "$300 billion", "$400 billion", "B", "The Indian real estate market is valued at over $200 billion."),
-            # Legal Framework & RERA Quiz (Module ID 2)
+            (1, "What does PropTech refer to?", "Property Technology", "Professional Technology", "Proper Technology", "Protected Technology", "A", "PropTech refers to Property Technology - digital platforms transforming real estate transactions."),
+            (1, "Which government initiative focuses on affordable housing?", "Smart Cities", "Housing for All", "Digital India", "Make in India", "B", "Housing for All is the government initiative focusing on affordable housing."),
+            (1, "What is a Special Economic Zone (SEZ)?", "Residential area", "Commercial area", "Industrial area with special benefits", "Agricultural area", "C", "SEZ is an industrial area with special economic benefits and policies."),
+            (1, "Which organization regulates REITs in India?", "RERA", "RBI", "SEBI", "IRDA", "C", "SEBI (Securities and Exchange Board of India) regulates REITs."),
+            (1, "What is the typical annual growth rate of Indian real estate market?", "2-4%", "6-8%", "10-12%", "15-20%", "B", "The Indian real estate market typically grows at 6-8% annually."),
+            (1, "What does IGBC certification indicate?", "Legal compliance", "Green building standards", "Fire safety", "Structural integrity", "B", "IGBC (Indian Green Building Council) certification indicates green building standards."),
+            (1, "Which factor is most important for real estate investment?", "Color of building", "Location", "Number of rooms", "Building height", "B", "Location is the most critical factor for real estate investment success."),
+            (1, "What is a row house?", "Independent house", "Apartment", "Attached house in a row", "Commercial space", "C", "A row house is an attached house in a series of connected houses."),
+            (1, "Which risk factor affects real estate investment?", "Market volatility", "Weather conditions", "Currency exchange", "Stock market", "A", "Market volatility is a major risk factor affecting real estate investments."),
+            (1, "What does 'under construction' mean?", "Completed project", "Project in building phase", "Demolished project", "Planned project", "B", "Under construction refers to projects currently in the building phase."),
+            (1, "Which document proves property ownership?", "Electricity bill", "Sale deed", "Ration card", "Driving license", "B", "Sale deed is the primary document proving property ownership."),
+            (1, "What is carpet area?", "Total project area", "Usable floor area", "Common area", "Parking area", "B", "Carpet area is the actual usable floor area within the walls of an apartment."),
+            (1, "Which sector contributes most to real estate demand?", "Agriculture", "IT/Services", "Mining", "Textile", "B", "IT and Services sector contributes significantly to real estate demand in India."),
+            (1, "What is a township?", "Small town", "Integrated development", "Village", "City district", "B", "A township is an integrated development with residential, commercial, and social infrastructure."),
+            (1, "Which approval is mandatory before construction?", "Neighbor consent", "Building plan approval", "Bank approval", "Insurance approval", "B", "Building plan approval from competent authority is mandatory before construction."),
+
+            # Legal Framework & RERA (Module 2) - 20 questions
             (2, "In which year was RERA enacted?", "2015", "2016", "2017", "2018", "B", "RERA (Real Estate Regulation and Development Act) was enacted in 2016."),
             (2, "What percentage of receivables must developers deposit in escrow account?", "50%", "60%", "70%", "80%", "C", "Developers must deposit 70% of receivables in escrow account under RERA."),
             (2, "How many years of structural warranty must developers provide?", "3 years", "5 years", "7 years", "10 years", "B", "Developers must provide 5-year structural warranty under RERA."),
             (2, "Projects with how many units must register under RERA?", "5+ units", "6+ units", "7+ units", "8+ units", "D", "Projects with 8 or more units or 500+ sq.m must register under RERA."),
-            (2, "What is the minimum area threshold for RERA registration?", "300 sq.m", "400 sq.m", "500 sq.m", "600 sq.m", "C", "Projects with 500 sq.m or more must register under RERA.")
+            (2, "What is the minimum area threshold for RERA registration?", "300 sq.m", "400 sq.m", "500 sq.m", "600 sq.m", "C", "Projects with 500 sq.m or more must register under RERA."),
+            (2, "What interest rate applies for delayed possession compensation?", "8% per annum", "10% per annum", "12% per annum", "15% per annum", "B", "RERA mandates 10% per annum interest for delayed possession compensation."),
+            (2, "How often must developers submit progress reports?", "Monthly", "Quarterly", "Half-yearly", "Annually", "B", "Developers must submit quarterly progress reports under RERA."),
+            (2, "What is the full form of MoHUA?", "Ministry of Home and Urban Affairs", "Ministry of Housing and Urban Affairs", "Ministry of Health and Urban Affairs", "Ministry of Housing and Urban Applications", "B", "MoHUA stands for Ministry of Housing and Urban Affairs."),
+            (2, "Who can file complaints under RERA?", "Only buyers", "Only agents", "Buyers and agents", "Anyone", "C", "Both homebuyers and real estate agents can file complaints under RERA."),
+            (2, "What is the penalty for non-registration under RERA?", "Warning", "Fine up to 10% of project cost", "Imprisonment", "Project closure", "B", "Non-registration under RERA can result in fine up to 10% of estimated project cost."),
+            (2, "Which authority handles RERA appeals?", "High Court", "Supreme Court", "RERA Appellate Tribunal", "Consumer Court", "C", "RERA Appellate Tribunal handles appeals against RERA authority orders."),
+            (2, "What information must be displayed on RERA website?", "Project details only", "Financial information only", "Complete project and financial details", "Marketing materials", "C", "Complete project and financial information must be displayed on RERA website."),
+            (2, "Can developers change approved plans without permission?", "Yes, always", "No, never", "Yes, with RERA approval", "Yes, with buyer consent", "C", "Developers cannot change approved plans without proper RERA approval."),
+            (2, "What is the time limit for possession delay complaints?", "1 year", "2 years", "3 years", "5 years", "C", "Complaints for possession delay can be filed within 3 years under RERA."),
+            (2, "Which document is most important for RERA complaint?", "Aadhaar card", "Sale agreement", "Bank statement", "Income certificate", "B", "Sale agreement is the most important document for filing RERA complaints."),
+            (2, "What happens if developer fails to get RERA registration?", "Project continues", "Project must stop", "Warning issued", "Fine imposed", "B", "Projects must stop if developer fails to get mandatory RERA registration."),
+            (2, "Can real estate agents work without RERA registration?", "Yes", "No", "Sometimes", "Only for resale", "B", "Real estate agents cannot work without RERA registration."),
+            (2, "What is defect liability period under RERA?", "2 years", "3 years", "5 years", "10 years", "C", "Defect liability period is 5 years for structural defects under RERA."),
+            (2, "Who appoints RERA authority members?", "Central Government", "State Government", "High Court", "Supreme Court", "B", "State Government appoints RERA authority members."),
+            (2, "What is the maximum composition of RERA authority?", "3 members", "5 members", "7 members", "9 members", "B", "RERA authority can have maximum 5 members including chairperson."),
+
+            # Property Measurements & Standards (Module 3) - 20 questions  
+            (3, "What is carpet area?", "Total project area", "Actual usable floor area", "Common area", "Parking area", "B", "Carpet area is the actual usable floor area within the apartment walls."),
+            (3, "Which standard governs property measurement in India?", "IS 3861:2002", "IS 1234:2000", "IS 5678:2005", "IS 9999:2010", "A", "IS 3861:2002 is the BIS standard for measurement of building areas."),
+            (3, "What is loading factor?", "Weight capacity", "Difference between super built-up and carpet area", "Floor strength", "Electrical load", "B", "Loading factor is the percentage difference between super built-up and carpet area."),
+            (3, "Post-RERA, property sales are based on which area?", "Super built-up area", "Built-up area", "Carpet area", "Saleable area", "C", "Post-RERA, property sales must be based on carpet area only."),
+            (3, "What percentage is typically added to carpet area for built-up area?", "5-10%", "10-15%", "20-25%", "30-35%", "B", "Built-up area typically adds 10-15% to carpet area for wall thickness."),
+            (3, "Balcony area gets what weightage in carpet area calculation?", "25%", "50%", "75%", "100%", "B", "Balcony area gets 50% weightage in carpet area calculation under BIS standards."),
+            (3, "What does 'WC' represent in floor plans?", "Water Cooler", "Wall Cabinet", "Water Closet", "Window Corner", "C", "WC represents Water Closet (toilet) in floor plans."),
+            (3, "What is the typical tolerance allowed in area measurement?", "±1%", "±2%", "±5%", "±10%", "B", "±2% tolerance is typically allowed in area measurements under BIS standards."),
+            (3, "Which area includes proportionate common areas?", "Carpet area", "Built-up area", "Super built-up area", "Usable area", "C", "Super built-up area includes proportionate common areas like lobbies, elevators."),
+            (3, "What should buyers do to verify measurements?", "Trust developer", "Hire independent surveyor", "Use online tools", "Ask neighbors", "B", "Buyers should hire independent surveyor to verify property measurements."),
+            (3, "Which symbol represents kitchen in floor plans?", "K", "Kit", "C", "Cook", "A", "K represents kitchen in architectural floor plans."),
+            (3, "What is the remedy for area shortfall under RERA?", "No remedy", "Proportionate refund", "Interest payment", "Both B and C", "D", "RERA provides both proportionate refund and interest for area shortfall."),
+            (3, "How are common areas typically distributed?", "Equally among all units", "Based on carpet area proportion", "Based on number of rooms", "Based on floor level", "B", "Common areas are distributed based on carpet area proportion of each unit."),
+            (3, "What does DB stand for in electrical plans?", "Door Bell", "Distribution Board", "Double Bedroom", "Data Board", "B", "DB stands for Distribution Board in electrical plans."),
+            (3, "Which measurement is most important for buyers?", "Super built-up area", "Built-up area", "Carpet area", "Total area", "C", "Carpet area is most important as it represents actual usable space."),
+            (3, "What technology helps in accurate measurement?", "GPS", "Laser measurement devices", "Mobile apps", "Calculators", "B", "Laser measurement devices provide high accuracy in property measurement."),
+            (3, "Cross-ventilation is important for which aspect?", "Security", "Privacy", "Air circulation", "Sound proofing", "C", "Cross-ventilation is important for natural air circulation in properties."),
+            (3, "What does CAD stand for in architectural drawings?", "Computer Aided Design", "Central Air Distribution", "Construction And Development", "Carpet Area Diagram", "A", "CAD stands for Computer Aided Design used in architectural drawings."),
+            (3, "Which direction facing is generally preferred in India?", "South", "West", "North or East", "Southwest", "C", "North or East facing properties are generally preferred in India."),
+            (3, "What is the standard ceiling height in residential buildings?", "8 feet", "9-10 feet", "12 feet", "15 feet", "B", "Standard ceiling height in residential buildings is 9-10 feet."),
+
+            # Valuation & Finance (Module 4) - 20 questions
+            (4, "What does CMA stand for in property valuation?", "Certified Market Analysis", "Comparative Market Analysis", "Commercial Market Assessment", "Current Market Appraisal", "B", "CMA stands for Comparative Market Analysis - comparing with similar properties."),
+            (4, "What is the income approach formula for valuation?", "Income ÷ Expenses", "Net Income ÷ Cap Rate", "Gross Income × 12", "Rental Yield ÷ 100", "B", "Income approach formula is Net Operating Income ÷ Capitalization Rate."),
+            (4, "What is LTV ratio?", "Loan-to-Value ratio", "Long-term-Value ratio", "Legal-title-Verification ratio", "Land-to-Value ratio", "A", "LTV is Loan-to-Value ratio - loan amount as percentage of property value."),
+            (4, "What is the current LTV limit for properties up to ₹30 lakh?", "75%", "80%", "85%", "90%", "D", "LTV limit is 90% for properties up to ₹30 lakh for eligible borrowers."),
+            (4, "What is the EMI formula component 'P'?", "Percentage", "Principal", "Payment", "Period", "B", "P represents Principal loan amount in EMI calculation formula."),
+            (4, "What is the current GST rate on under-construction properties?", "1% or 5%", "5% or 12%", "12% or 18%", "18% or 28%", "A", "GST on under-construction properties is 1% (without ITC) or 5% (with ITC)."),
+            (4, "How many years constitute long-term capital gains for property?", "1 year", "2 years", "3 years", "5 years", "B", "Property held for more than 2 years qualifies for long-term capital gains."),
+            (4, "What is Section 54 exemption for?", "Stamp duty", "Registration", "Capital gains tax", "Income tax", "C", "Section 54 provides capital gains tax exemption for purchasing another house."),
+            (4, "What is rental yield formula?", "Monthly rent × 12 ÷ Property price", "Annual rent ÷ Property price × 100", "Property price ÷ Annual rent", "Monthly rent ÷ Property price", "B", "Rental yield = (Annual rent ÷ Property price) × 100."),
+            (4, "Which factor has highest weight in property valuation?", "Age of property", "Location", "Size", "Amenities", "B", "Location typically has the highest weight (40-50%) in property valuation."),
+            (4, "What is cap rate?", "Capital rate", "Capitalization rate", "Capacity rate", "Capital gains rate", "B", "Cap rate is capitalization rate used in income approach valuation."),
+            (4, "What is stamp duty calculated on?", "Agreement value only", "Market value only", "Higher of agreement or circle rate", "Registration value", "C", "Stamp duty is calculated on higher of agreement value or circle rate."),
+            (4, "What is the benefit of indexation in capital gains?", "Reduces tax", "Increases tax", "No impact", "Eliminates tax", "A", "Indexation adjusts purchase price for inflation, reducing taxable capital gains."),
+            (4, "Which type of interest rate remains constant?", "Fixed rate", "Floating rate", "Variable rate", "Flexible rate", "A", "Fixed interest rate remains constant throughout the loan tenure."),
+            (4, "What does IRR stand for?", "Interest Rate Return", "Internal Rate of Return", "Investment Risk Ratio", "Income Ratio Return", "B", "IRR stands for Internal Rate of Return considering all cash flows."),
+            (4, "What is the typical down payment percentage?", "10-25%", "25-50%", "50-75%", "75-90%", "A", "Down payment is typically 10-25% (100% - LTV ratio)."),
+            (4, "Which risk affects property liquidity?", "Market risk", "Credit risk", "Liquidity risk", "Interest rate risk", "C", "Liquidity risk affects how quickly property can be sold in the market."),
+            (4, "What is cost approach depreciation rate annually?", "1-2%", "2-3%", "5-10%", "10-15%", "B", "Annual depreciation rate for buildings is typically 2-3% in cost approach."),
+            (4, "Which document is required for home loan?", "Driving license", "Voter ID", "ITR and salary slips", "Ration card", "C", "ITR (Income Tax Returns) and salary slips are required for home loan."),
+            (4, "What is CIBIL score requirement for home loans?", "500+", "600+", "700+", "750+", "D", "CIBIL score of 750+ is preferred for home loans for better rates."),
+
+            # Land & Development Laws (Module 5) - 20 questions
+            (5, "What does FSI stand for?", "Floor Space Index", "Floor Size Index", "Floor Structure Index", "Floor Safety Index", "A", "FSI stands for Floor Space Index - ratio of total floor area to plot area."),
+            (5, "What does TDR stand for?", "Total Development Rights", "Transfer of Development Rights", "Temporary Development Rights", "Technical Development Rights", "B", "TDR stands for Transfer of Development Rights."),
+            (5, "What is the purpose of GDCR?", "Tax collection", "Urban development control", "Property registration", "Loan processing", "B", "GDCR (General Development Control Regulations) controls urban development."),
+            (5, "What is typical FSI for residential zones?", "0.5-1.0", "1.0-2.5", "3.0-4.0", "5.0-6.0", "B", "Typical FSI for residential zones ranges from 1.0-2.5."),
+            (5, "How is FSI calculated?", "Total floor area ÷ Plot area", "Plot area ÷ Total floor area", "Built-up area ÷ Carpet area", "Carpet area ÷ Built-up area", "A", "FSI = Total floor area of all floors ÷ Plot area."),
+            (5, "What is front setback requirement typically?", "1-2 meters", "3-6 meters", "8-10 meters", "12-15 meters", "B", "Front setback requirement is typically 3-6 meters based on road width."),
+            (5, "Which authority issues building plan approval?", "State government", "Central government", "Municipal corporation", "High court", "C", "Municipal corporation or development authority issues building plan approval."),
+            (5, "What is EIA?", "Economic Impact Assessment", "Environmental Impact Assessment", "Engineering Impact Assessment", "Educational Impact Assessment", "B", "EIA stands for Environmental Impact Assessment."),
+            (5, "For which project size is EIA mandatory?", "5,000 sq.m", "10,000 sq.m", "20,000 sq.m", "50,000 sq.m", "C", "EIA is mandatory for projects above 20,000 sq.m built-up area."),
+            (5, "What is the validity period of building plan approval?", "1 year", "2 years", "3 years", "5 years", "C", "Building plan approval is typically valid for 3 years."),
+            (5, "What does CRZ stand for?", "Coastal Regulation Zone", "Central Regulation Zone", "Commercial Regulation Zone", "Construction Regulation Zone", "A", "CRZ stands for Coastal Regulation Zone."),
+            (5, "Which clearance is needed near airports?", "Forest clearance", "Airport Authority clearance", "Railway clearance", "Defense clearance", "B", "Airport Authority clearance is needed for height restrictions near airports."),
+            (5, "What is premium FSI?", "Basic FSI", "Additional FSI against payment", "Reduced FSI", "Free FSI", "B", "Premium FSI is additional FSI available against payment of premium."),
+            (5, "How long is TDR typically valid?", "5 years", "10 years", "15 years", "20 years", "B", "TDR is typically valid for 10 years from date of issue."),
+            (5, "What is slum TDR?", "TDR for slum dwellers", "TDR from slum rehabilitation", "TDR for poor people", "TDR for rural areas", "B", "Slum TDR is generated from slum rehabilitation projects."),
+            (5, "Which zone allows mixed-use development?", "Residential only", "Commercial only", "Industrial only", "Mixed-use zones", "D", "Mixed-use zones specifically allow combination of residential and commercial."),
+            (5, "What is land use conversion?", "Changing ownership", "Changing area", "Changing permitted use", "Changing price", "C", "Land use conversion means changing the permitted use of land."),
+            (5, "What is betterment levy?", "Development charge", "Maintenance charge", "Service charge", "All of the above", "A", "Betterment levy is a development charge for land use conversion."),
+            (5, "Which penalty applies for unauthorized construction?", "Warning only", "Fine and possible demolition", "Imprisonment only", "No penalty", "B", "Unauthorized construction can attract fines and possible demolition."),
+            (5, "What is heritage TDR for?", "Old buildings", "Preserving heritage structures", "Historical documents", "Ancient artifacts", "B", "Heritage TDR incentivizes preservation of heritage structures.")
         ]
         
-        for question in sample_questions:
+        for question in quiz_questions:
             cursor.execute("""
                 INSERT INTO quizzes (module_id, question, option_a, option_b, option_c, option_d, correct_answer, explanation, created_date)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -332,7 +930,7 @@ def get_db_connection():
     """Get database connection"""
     return sqlite3.connect(DATABASE_PATH)
 
-# Enhanced CSS Styling with Gamification
+# Enhanced CSS Styling with Fixed Images and Gamification
 st.markdown("""
 <style>
 .main-header {
@@ -351,6 +949,30 @@ st.markdown("""
     box-shadow: 0 2px 4px rgba(0,0,0,0.1);
     margin-bottom: 1rem;
     border-left: 4px solid #2a5298;
+}
+
+.feature-card {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    padding: 2rem;
+    border-radius: 15px;
+    color: white;
+    text-align: center;
+    margin-bottom: 1rem;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255,255,255,0.2);
+}
+
+.feature-card h3 {
+    margin-bottom: 1rem;
+    font-size: 1.2rem;
+    font-weight: 600;
+}
+
+.feature-card p {
+    font-size: 0.9rem;
+    opacity: 0.9;
+    line-height: 1.5;
 }
 
 .progress-bar {
@@ -457,6 +1079,24 @@ st.markdown("""
     width: 100%;
     height: 100%;
     border-radius: 10px;
+}
+
+.achievement-card {
+    background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+    padding: 1rem;
+    border-radius: 10px;
+    color: white;
+    margin: 0.5rem 0;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+}
+
+.level-indicator {
+    background: linear-gradient(45deg, #667eea, #764ba2);
+    color: white;
+    padding: 0.5rem;
+    border-radius: 15px;
+    text-align: center;
+    font-weight: bold;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -651,61 +1291,72 @@ def award_points(user_id, points, reason):
     conn = get_db_connection()
     cursor = conn.cursor()
     
-    # Update user points
-    cursor.execute("UPDATE users SET points = points + ? WHERE id = ?", (points, user_id))
-    
-    # Record achievement
-    cursor.execute("""
-        INSERT INTO user_achievements (user_id, achievement_type, achievement_name, points_earned, earned_date)
-        VALUES (?, ?, ?, ?, ?)
-    """, (user_id, "points", reason, points, datetime.now().isoformat()))
-    
-    conn.commit()
-    conn.close()
+    try:
+        # Update user points
+        cursor.execute("UPDATE users SET points = points + ? WHERE id = ?", (points, user_id))
+        
+        # Record achievement
+        cursor.execute("""
+            INSERT INTO user_achievements (user_id, achievement_type, achievement_name, points_earned, earned_date)
+            VALUES (?, ?, ?, ?, ?)
+        """, (user_id, "points", reason, points, datetime.now().isoformat()))
+        
+        conn.commit()
+    except Exception as e:
+        print(f"Error awarding points: {e}")
+    finally:
+        conn.close()
 
 def award_badge(user_id, badge_name):
     """Award badge to user"""
     conn = get_db_connection()
     cursor = conn.cursor()
     
-    # Get current badges
-    cursor.execute("SELECT badges FROM users WHERE id = ?", (user_id,))
-    result = cursor.fetchone()
-    
-    if result:
-        badges = json.loads(result[0]) if result[0] else []
-        if badge_name not in badges:
-            badges.append(badge_name)
-            
-            # Update badges
-            cursor.execute("UPDATE users SET badges = ? WHERE id = ?", (json.dumps(badges), user_id))
-            
-            # Record achievement
-            cursor.execute("""
-                INSERT INTO user_achievements (user_id, achievement_type, achievement_name, points_earned, earned_date)
-                VALUES (?, ?, ?, ?, ?)
-            """, (user_id, "badge", badge_name, 0, datetime.now().isoformat()))
-            
-            conn.commit()
-    
-    conn.close()
+    try:
+        # Get current badges
+        cursor.execute("SELECT badges FROM users WHERE id = ?", (user_id,))
+        result = cursor.fetchone()
+        
+        if result:
+            badges = json.loads(result[0]) if result[0] else []
+            if badge_name not in badges:
+                badges.append(badge_name)
+                
+                # Update badges
+                cursor.execute("UPDATE users SET badges = ? WHERE id = ?", (json.dumps(badges), user_id))
+                
+                # Record achievement
+                cursor.execute("""
+                    INSERT INTO user_achievements (user_id, achievement_type, achievement_name, points_earned, earned_date)
+                    VALUES (?, ?, ?, ?, ?)
+                """, (user_id, "badge", badge_name, 0, datetime.now().isoformat()))
+                
+                conn.commit()
+    except Exception as e:
+        print(f"Error awarding badge: {e}")
+    finally:
+        conn.close()
 
 def get_user_stats(user_id):
     """Get user statistics for gamification"""
     conn = get_db_connection()
     cursor = conn.cursor()
     
-    cursor.execute("SELECT points, badges, streak_days FROM users WHERE id = ?", (user_id,))
-    result = cursor.fetchone()
+    try:
+        cursor.execute("SELECT points, badges, streak_days FROM users WHERE id = ?", (user_id,))
+        result = cursor.fetchone()
+        
+        if result:
+            return {
+                'points': result[0] or 0,
+                'badges': json.loads(result[1]) if result[1] else [],
+                'streak_days': result[2] or 0
+            }
+    except Exception as e:
+        print(f"Error getting user stats: {e}")
+    finally:
+        conn.close()
     
-    if result:
-        return {
-            'points': result[0] or 0,
-            'badges': json.loads(result[1]) if result[1] else [],
-            'streak_days': result[2] or 0
-        }
-    
-    conn.close()
     return {'points': 0, 'badges': [], 'streak_days': 0}
 
 # YouTube Functions
@@ -740,28 +1391,32 @@ def embed_youtube_video(video_url):
         return True
     return False
 
-# Authentication functions
+# Authentication functions with fixed column references
 def authenticate_user(username, password):
     conn = get_db_connection()
     cursor = conn.cursor()
     
     hashed_password = hashlib.sha256(password.encode()).hexdigest()
     
-    cursor.execute("""
-        SELECT id, username, role, points, badges FROM users 
-        WHERE username = ? AND password = ? AND active = 1
-    """, (username, hashed_password))
-    
-    user = cursor.fetchone()
-    conn.close()
-    
-    if user:
-        st.session_state.user_id = user[0]
-        st.session_state.username = user[1]
-        st.session_state.user_role = user[2]
-        st.session_state.user_points = user[3] or 0
-        st.session_state.user_badges = json.loads(user[4]) if user[4] else []
-        return True
+    try:
+        cursor.execute("""
+            SELECT id, username, role, points, badges FROM users 
+            WHERE username = ? AND password = ? AND active = 1
+        """, (username, hashed_password))
+        
+        user = cursor.fetchone()
+        
+        if user:
+            st.session_state.user_id = user[0]
+            st.session_state.username = user[1]
+            st.session_state.user_role = user[2]
+            st.session_state.user_points = user[3] or 0
+            st.session_state.user_badges = json.loads(user[4]) if user[4] else []
+            return True
+    except Exception as e:
+        print(f"Authentication error: {e}")
+    finally:
+        conn.close()
     
     return False
 
@@ -773,22 +1428,22 @@ def register_user(username, email, password, user_type):
         # Check if username or email already exists
         cursor.execute("SELECT COUNT(*) FROM users WHERE username = ? OR email = ?", (username, email))
         if cursor.fetchone()[0] > 0:
-            conn.close()
             return False
             
         hashed_password = hashlib.sha256(password.encode()).hexdigest()
         
         cursor.execute("""
-            INSERT INTO users (username, email, password, role, created_date, points, badges)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        """, (username, email, hashed_password, user_type, datetime.now().isoformat(), 100, '["Welcome Learner"]'))
+            INSERT INTO users (username, email, password, role, created_date, points, badges, streak_days)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """, (username, email, hashed_password, user_type, datetime.now().isoformat(), 100, '["Welcome Learner"]', 1))
         
         conn.commit()
-        conn.close()
         return True
     except Exception as e:
-        conn.close()
+        print(f"Registration error: {e}")
         return False
+    finally:
+        conn.close()
 
 def create_user_by_admin(username, email, password, role):
     """Admin function to create new users"""
@@ -804,67 +1459,77 @@ def create_user_by_admin(username, email, password, role):
         hashed_password = hashlib.sha256(password.encode()).hexdigest()
         
         cursor.execute("""
-            INSERT INTO users (username, email, password, role, created_date, points, badges)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        """, (username, email, hashed_password, role, datetime.now().isoformat(), 100, '["New Member"]'))
+            INSERT INTO users (username, email, password, role, created_date, points, badges, streak_days)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """, (username, email, hashed_password, role, datetime.now().isoformat(), 100, '["New Member"]', 0))
         
         conn.commit()
-        conn.close()
         return True, "User created successfully"
     except Exception as e:
-        conn.close()
         return False, f"Error creating user: {str(e)}"
+    finally:
+        conn.close()
 
 # Module and Content Functions
 def get_available_modules():
     conn = get_db_connection()
     cursor = conn.cursor()
     
-    cursor.execute("""
-        SELECT id, title, description, difficulty, category, youtube_url
-        FROM modules 
-        WHERE active = 1
-        ORDER BY order_index
-    """)
-    
-    modules = cursor.fetchall()
-    conn.close()
-    
-    return [
-        {
-            'id': module[0],
-            'title': module[1],
-            'description': module[2],
-            'difficulty': module[3],
-            'category': module[4],
-            'youtube_url': module[5]
-        }
-        for module in modules
-    ]
+    try:
+        cursor.execute("""
+            SELECT id, title, description, difficulty, category, youtube_url
+            FROM modules 
+            WHERE active = 1
+            ORDER BY order_index
+        """)
+        
+        modules = cursor.fetchall()
+        
+        return [
+            {
+                'id': module[0],
+                'title': module[1],
+                'description': module[2],
+                'difficulty': module[3],
+                'category': module[4],
+                'youtube_url': module[5]
+            }
+            for module in modules
+        ]
+    except Exception as e:
+        print(f"Error getting modules: {e}")
+        return []
+    finally:
+        conn.close()
 
 def get_module_content(module_id):
     """Get full content of a specific module"""
     conn = get_db_connection()
     cursor = conn.cursor()
     
-    cursor.execute("""
-        SELECT title, description, content, difficulty, category, youtube_url
-        FROM modules 
-        WHERE id = ? AND active = 1
-    """, (module_id,))
+    try:
+        cursor.execute("""
+            SELECT title, description, content, difficulty, category, youtube_url
+            FROM modules 
+            WHERE id = ? AND active = 1
+        """, (module_id,))
+        
+        result = cursor.fetchone()
+        
+        if result:
+            return {
+                'title': result[0],
+                'description': result[1],
+                'content': result[2],
+                'difficulty': result[3],
+                'category': result[4],
+                'youtube_url': result[5]
+            }
+    except Exception as e:
+        print(f"Error getting module content: {e}")
+    finally:
+        conn.close()
     
-    result = cursor.fetchone()
-    conn.close()
-    
-    if result:
-        return {
-            'title': result[0],
-            'description': result[1],
-            'content': result[2],
-            'difficulty': result[3],
-            'category': result[4],
-            'youtube_url': result[5]
-        }
     return None
 
 def update_module_content(module_id, title, description, content, youtube_url):
@@ -880,11 +1545,12 @@ def update_module_content(module_id, title, description, content, youtube_url):
         """, (title, description, content, youtube_url, datetime.now().isoformat(), module_id))
         
         conn.commit()
-        conn.close()
         return True
-    except:
-        conn.close()
+    except Exception as e:
+        print(f"Error updating module: {e}")
         return False
+    finally:
+        conn.close()
 
 def add_module(title, description, difficulty, category, content="", youtube_url=""):
     conn = get_db_connection()
@@ -897,11 +1563,12 @@ def add_module(title, description, difficulty, category, content="", youtube_url
         """, (title, description, difficulty, category, content, youtube_url, datetime.now().isoformat()))
         
         conn.commit()
-        conn.close()
         return True
-    except:
-        conn.close()
+    except Exception as e:
+        print(f"Error adding module: {e}")
         return False
+    finally:
+        conn.close()
 
 def delete_module(module_id):
     conn = get_db_connection()
@@ -910,11 +1577,12 @@ def delete_module(module_id):
     try:
         cursor.execute("UPDATE modules SET active = 0 WHERE id = ?", (module_id,))
         conn.commit()
-        conn.close()
         return True
-    except:
-        conn.close()
+    except Exception as e:
+        print(f"Error deleting module: {e}")
         return False
+    finally:
+        conn.close()
 
 # Quiz Functions
 def get_quiz_questions(module_id):
@@ -922,26 +1590,31 @@ def get_quiz_questions(module_id):
     conn = get_db_connection()
     cursor = conn.cursor()
     
-    cursor.execute("""
-        SELECT id, question, option_a, option_b, option_c, option_d, correct_answer, explanation
-        FROM quizzes
-        WHERE module_id = ?
-        ORDER BY id
-    """, (module_id,))
-    
-    questions = cursor.fetchall()
-    conn.close()
-    
-    return [
-        {
-            'id': q[0],
-            'question': q[1],
-            'options': {'A': q[2], 'B': q[3], 'C': q[4], 'D': q[5]},
-            'correct_answer': q[6],
-            'explanation': q[7]
-        }
-        for q in questions
-    ]
+    try:
+        cursor.execute("""
+            SELECT id, question, option_a, option_b, option_c, option_d, correct_answer, explanation
+            FROM quizzes
+            WHERE module_id = ?
+            ORDER BY id
+        """, (module_id,))
+        
+        questions = cursor.fetchall()
+        
+        return [
+            {
+                'id': q[0],
+                'question': q[1],
+                'options': {'A': q[2], 'B': q[3], 'C': q[4], 'D': q[5]},
+                'correct_answer': q[6],
+                'explanation': q[7]
+            }
+            for q in questions
+        ]
+    except Exception as e:
+        print(f"Error getting quiz questions: {e}")
+        return []
+    finally:
+        conn.close()
 
 def add_quiz_question(module_id, question, option_a, option_b, option_c, option_d, correct_answer, explanation):
     """Add a new quiz question"""
@@ -955,43 +1628,49 @@ def add_quiz_question(module_id, question, option_a, option_b, option_c, option_
         """, (module_id, question, option_a, option_b, option_c, option_d, correct_answer, explanation, datetime.now().isoformat()))
         
         conn.commit()
-        conn.close()
         return True
-    except:
-        conn.close()
+    except Exception as e:
+        print(f"Error adding quiz question: {e}")
         return False
+    finally:
+        conn.close()
 
 def save_quiz_result(user_id, module_id, score, total_questions):
     """Save quiz result and award points/badges"""
     conn = get_db_connection()
     cursor = conn.cursor()
     
-    percentage = (score / total_questions) * 100
-    
-    # Update or insert progress
-    cursor.execute("""
-        INSERT OR REPLACE INTO user_progress 
-        (user_id, module_id, quiz_score, quiz_attempts, started_date)
-        VALUES (?, ?, ?, 
-                COALESCE((SELECT quiz_attempts FROM user_progress WHERE user_id = ? AND module_id = ?), 0) + 1,
-                ?)
-    """, (user_id, module_id, percentage, user_id, module_id, datetime.now().isoformat()))
-    
-    conn.commit()
-    conn.close()
-    
-    # Award points based on performance
-    if percentage >= 90:
-        award_points(user_id, 100, f"Excellent Quiz Performance ({percentage:.1f}%)")
-        if percentage == 100:
-            award_badge(user_id, "Perfect Score")
-    elif percentage >= 80:
-        award_points(user_id, 75, f"Good Quiz Performance ({percentage:.1f}%)")
-    elif percentage >= 70:
-        award_points(user_id, 50, f"Passing Quiz Score ({percentage:.1f}%)")
-    
-    # Award completion badge
-    award_badge(user_id, "Quiz Taker")
+    try:
+        percentage = (score / total_questions) * 100
+        
+        # Update or insert progress
+        cursor.execute("""
+            INSERT OR REPLACE INTO user_progress 
+            (user_id, module_id, quiz_score, quiz_attempts, started_date)
+            VALUES (?, ?, ?, 
+                    COALESCE((SELECT quiz_attempts FROM user_progress WHERE user_id = ? AND module_id = ?), 0) + 1,
+                    ?)
+        """, (user_id, module_id, percentage, user_id, module_id, datetime.now().isoformat()))
+        
+        conn.commit()
+        
+        # Award points based on performance
+        if percentage >= 90:
+            award_points(user_id, 100, f"Excellent Quiz Performance ({percentage:.1f}%)")
+            if percentage == 100:
+                award_badge(user_id, "Perfect Score")
+        elif percentage >= 80:
+            award_points(user_id, 75, f"Good Quiz Performance ({percentage:.1f}%)")
+        elif percentage >= 70:
+            award_points(user_id, 50, f"Passing Quiz Score ({percentage:.1f}%)")
+        
+        # Award completion badge
+        award_badge(user_id, "Quiz Taker")
+        
+    except Exception as e:
+        print(f"Error saving quiz result: {e}")
+    finally:
+        conn.close()
 
 # Data Visualization Functions
 def create_user_progress_chart(user_id):
@@ -999,91 +1678,98 @@ def create_user_progress_chart(user_id):
     conn = get_db_connection()
     cursor = conn.cursor()
     
-    cursor.execute("""
-        SELECT m.title, COALESCE(p.quiz_score, 0) as score
-        FROM modules m
-        LEFT JOIN user_progress p ON m.id = p.module_id AND p.user_id = ?
-        WHERE m.active = 1
-        ORDER BY m.order_index
-    """, (user_id,))
-    
-    data = cursor.fetchall()
-    conn.close()
-    
-    if data:
-        df = pd.DataFrame(data, columns=['Module', 'Score'])
+    try:
+        cursor.execute("""
+            SELECT m.title, COALESCE(p.quiz_score, 0) as score
+            FROM modules m
+            LEFT JOIN user_progress p ON m.id = p.module_id AND p.user_id = ?
+            WHERE m.active = 1
+            ORDER BY m.order_index
+        """, (user_id,))
         
-        fig = px.bar(
-            df, 
-            x='Module', 
-            y='Score',
-            title='Your Module Progress',
-            color='Score',
-            color_continuous_scale='viridis'
-        )
+        data = cursor.fetchall()
         
-        fig.update_layout(
-            xaxis_tickangle=-45,
-            height=400
-        )
-        
-        st.plotly_chart(fig, use_container_width=True)
+        if data:
+            df = pd.DataFrame(data, columns=['Module', 'Score'])
+            
+            fig = px.bar(
+                df, 
+                x='Module', 
+                y='Score',
+                title='Your Module Progress',
+                color='Score',
+                color_continuous_scale='viridis'
+            )
+            
+            fig.update_layout(
+                xaxis_tickangle=-45,
+                height=400
+            )
+            
+            st.plotly_chart(fig, use_container_width=True)
+    except Exception as e:
+        print(f"Error creating progress chart: {e}")
+    finally:
+        conn.close()
 
 def create_admin_analytics_charts():
     """Create admin analytics visualizations"""
     conn = get_db_connection()
     cursor = conn.cursor()
     
-    # User registration over time
-    cursor.execute("""
-        SELECT DATE(created_date) as date, COUNT(*) as registrations
-        FROM users
-        WHERE role != 'admin'
-        GROUP BY DATE(created_date)
-        ORDER BY date
-    """)
-    
-    reg_data = cursor.fetchall()
-    
-    if reg_data:
-        df_reg = pd.DataFrame(reg_data, columns=['Date', 'Registrations'])
-        df_reg['Date'] = pd.to_datetime(df_reg['Date'])
+    try:
+        # User registration over time
+        cursor.execute("""
+            SELECT DATE(created_date) as date, COUNT(*) as registrations
+            FROM users
+            WHERE role != 'admin'
+            GROUP BY DATE(created_date)
+            ORDER BY date
+        """)
         
-        fig1 = px.line(
-            df_reg,
-            x='Date',
-            y='Registrations',
-            title='User Registrations Over Time',
-            markers=True
-        )
+        reg_data = cursor.fetchall()
         
-        st.plotly_chart(fig1, use_container_width=True)
-    
-    # Module completion rates
-    cursor.execute("""
-        SELECT m.title, COUNT(p.user_id) as completions
-        FROM modules m
-        LEFT JOIN user_progress p ON m.id = p.module_id AND p.quiz_score >= 70
-        WHERE m.active = 1
-        GROUP BY m.id, m.title
-        ORDER BY completions DESC
-    """)
-    
-    completion_data = cursor.fetchall()
-    
-    if completion_data:
-        df_comp = pd.DataFrame(completion_data, columns=['Module', 'Completions'])
+        if reg_data:
+            df_reg = pd.DataFrame(reg_data, columns=['Date', 'Registrations'])
+            df_reg['Date'] = pd.to_datetime(df_reg['Date'])
+            
+            fig1 = px.line(
+                df_reg,
+                x='Date',
+                y='Registrations',
+                title='User Registrations Over Time',
+                markers=True
+            )
+            
+            st.plotly_chart(fig1, use_container_width=True)
         
-        fig2 = px.pie(
-            df_comp,
-            values='Completions',
-            names='Module',
-            title='Module Completion Distribution'
-        )
+        # Module completion rates
+        cursor.execute("""
+            SELECT m.title, COUNT(p.user_id) as completions
+            FROM modules m
+            LEFT JOIN user_progress p ON m.id = p.module_id AND p.quiz_score >= 70
+            WHERE m.active = 1
+            GROUP BY m.id, m.title
+            ORDER BY completions DESC
+        """)
         
-        st.plotly_chart(fig2, use_container_width=True)
-    
-    conn.close()
+        completion_data = cursor.fetchall()
+        
+        if completion_data:
+            df_comp = pd.DataFrame(completion_data, columns=['Module', 'Completions'])
+            
+            fig2 = px.pie(
+                df_comp,
+                values='Completions',
+                names='Module',
+                title='Module Completion Distribution'
+            )
+            
+            st.plotly_chart(fig2, use_container_width=True)
+    except Exception as e:
+        print(f"Error creating admin charts: {e}")
+    finally:
+        conn.close()
 
 # Main UI Functions
 def show_login_form():
@@ -1221,31 +1907,31 @@ def show_navigation():
         st.rerun()
 
 def show_welcome_page():
-    st.markdown('<div class="main-header"><h1>Welcome to RealEstateGuru</h1><p>Your Complete Real Estate Education Platform with Gamification</p></div>', unsafe_allow_html=True)
+    st.markdown('<div class="main-header"><h1>Welcome to RealEstateGuru</h1><p>Your Complete Real Estate Education Platform with Gamification & AI</p></div>', unsafe_allow_html=True)
     
     col1, col2, col3 = st.columns(3)
     
     with col1:
         st.markdown("""
-        <div class="module-card">
+        <div class="feature-card">
             <h3>🎯 Learn & Earn Points</h3>
-            <p>Complete modules, take quizzes, and earn points and badges while mastering real estate concepts.</p>
+            <p>Complete modules, take quizzes, and earn points and badges while mastering real estate concepts with our comprehensive curriculum.</p>
         </div>
         """, unsafe_allow_html=True)
     
     with col2:
         st.markdown("""
-        <div class="module-card">
+        <div class="feature-card">
             <h3>🎥 Video Learning</h3>
-            <p>Watch curated YouTube videos embedded in each module for enhanced learning experience.</p>
+            <p>Watch curated YouTube videos embedded in each module for enhanced learning experience with visual explanations.</p>
         </div>
         """, unsafe_allow_html=True)
     
     with col3:
         st.markdown("""
-        <div class="module-card">
+        <div class="feature-card">
             <h3>🤖 AI-Powered</h3>
-            <p>Get AI assistance, auto-generated quizzes, and content improvements using advanced AI technology.</p>
+            <p>Get AI assistance, auto-generated quizzes, and content improvements using advanced DeepSeek AI technology.</p>
         </div>
         """, unsafe_allow_html=True)
     
@@ -1256,19 +1942,21 @@ def show_welcome_page():
     with col1:
         st.subheader("🎯 Key Features")
         st.markdown("""
-        - 📚 **Rich Content**: Comprehensive modules with videos and interactive content
-        - 🎮 **Gamification**: Points, badges, and achievements to keep you motivated
+        - 📚 **Rich Content**: 5 comprehensive modules with 20+ quizzes each
+        - 🎮 **Gamification**: Points, badges, and achievements system
         - 📱 **Responsive Design**: Learn on any device with optimized interface
         - 🏅 **Certification Ready**: Prepare for real estate certifications
+        - 📊 **Progress Analytics**: Visual charts showing your learning journey
         """)
     
     with col2:
         st.subheader("🚀 Advanced Features")
         st.markdown("""
         - 🤖 **AI Assistant**: Get instant help and generate custom content
-        - 📊 **Progress Analytics**: Detailed charts and progress tracking
-        - 🎥 **Video Integration**: YouTube videos embedded in modules
-        - 👥 **Admin Tools**: Complete content and user management system
+        - 📈 **Real-time Analytics**: Live progress tracking and performance metrics
+        - 🎥 **Video Integration**: YouTube videos embedded directly in modules
+        - 👥 **Complete Admin Tools**: Full content and user management system
+        - ✏️ **Content Editing**: Full CRUD operations for all content
         """)
     
     st.markdown("---")
@@ -1299,7 +1987,7 @@ def show_user_dashboard():
     
     with col4:
         st.markdown('<div class="metric-card">', unsafe_allow_html=True)
-        st.metric("📚 Modules", "5", "Available to learn")
+        st.metric("📚 Modules", "5", "100+ Quiz Questions")
         st.markdown('</div>', unsafe_allow_html=True)
     
     st.markdown("---")
@@ -1325,6 +2013,10 @@ def show_user_dashboard():
             
             if module['youtube_url']:
                 st.write("📹 **Video Available**")
+            
+            # Show quiz count
+            quiz_count = len(get_quiz_questions(module['id']))
+            st.write(f"❓ **Quiz Questions:** {quiz_count}")
             
             col1, col2, col3 = st.columns(3)
             with col1:
@@ -1606,7 +2298,7 @@ def show_achievements():
         for i, badge in enumerate(user_stats['badges']):
             with cols[i % 3]:
                 st.markdown(f"""
-                <div class="module-card">
+                <div class="achievement-card">
                     <center>
                         <h2>🏅</h2>
                         <h4>{badge}</h4>
@@ -1624,28 +2316,32 @@ def show_achievements():
     conn = get_db_connection()
     cursor = conn.cursor()
     
-    cursor.execute("""
-        SELECT achievement_name, points_earned, earned_date
-        FROM user_achievements
-        WHERE user_id = ?
-        ORDER BY earned_date DESC
-        LIMIT 10
-    """, (st.session_state.user_id,))
-    
-    achievements = cursor.fetchall()
-    conn.close()
-    
-    if achievements:
-        for achievement in achievements:
-            points_text = f"(+{achievement[1]} points)" if achievement[1] > 0 else ""
-            st.markdown(f"""
-            <div class="module-card">
-                <strong>{achievement[0]}</strong> {points_text}
-                <br><small>{achievement[2]}</small>
-            </div>
-            """, unsafe_allow_html=True)
-    else:
-        st.info("No recent activity. Start learning to see your progress here!")
+    try:
+        cursor.execute("""
+            SELECT achievement_name, points_earned, earned_date
+            FROM user_achievements
+            WHERE user_id = ?
+            ORDER BY earned_date DESC
+            LIMIT 10
+        """, (st.session_state.user_id,))
+        
+        achievements = cursor.fetchall()
+        
+        if achievements:
+            for achievement in achievements:
+                points_text = f"(+{achievement[1]} points)" if achievement[1] > 0 else ""
+                st.markdown(f"""
+                <div class="module-card">
+                    <strong>{achievement[0]}</strong> {points_text}
+                    <br><small>{achievement[2]}</small>
+                </div>
+                """, unsafe_allow_html=True)
+        else:
+            st.info("No recent activity. Start learning to see your progress here!")
+    except Exception as e:
+        print(f"Error showing achievements: {e}")
+    finally:
+        conn.close()
 
 def show_admin_dashboard():
     st.markdown('<div class="main-header"><h1>Admin Dashboard</h1></div>', unsafe_allow_html=True)
@@ -1654,61 +2350,65 @@ def show_admin_dashboard():
     conn = get_db_connection()
     cursor = conn.cursor()
     
-    cursor.execute("SELECT COUNT(*) FROM users WHERE active = 1")
-    user_count = cursor.fetchone()[0]
-    
-    cursor.execute("SELECT COUNT(*) FROM modules WHERE active = 1")
-    module_count = cursor.fetchone()[0]
-    
-    cursor.execute("SELECT COUNT(*) FROM quizzes")
-    quiz_count = cursor.fetchone()[0]
-    
-    cursor.execute("SELECT SUM(points) FROM users WHERE role != 'admin'")
-    total_points = cursor.fetchone()[0] or 0
-    
-    conn.close()
-    
-    col1, col2, col3, col4 = st.columns(4)
-    
-    with col1:
-        st.metric("Total Users", user_count, "Active users")
-    
-    with col2:
-        st.metric("Modules", module_count, "Published")
-    
-    with col3:
-        st.metric("Quiz Questions", quiz_count, "Available")
-    
-    with col4:
-        st.metric("Total Points Earned", total_points, "By all users")
-    
-    st.markdown("---")
-    
-    # Analytics charts
-    st.subheader("📊 System Analytics")
-    create_admin_analytics_charts()
-    
-    st.markdown("---")
-    
-    # Quick Actions
-    st.subheader("🚀 Quick Actions")
-    
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        if st.button("📚 Manage Content", use_container_width=True):
-            st.session_state.current_page = "content_management"
-            st.rerun()
-    
-    with col2:
-        if st.button("👥 Add User", use_container_width=True):
-            st.session_state.current_page = "add_user"
-            st.rerun()
-    
-    with col3:
-        if st.button("❓ Add Quiz", use_container_width=True):
-            st.session_state.current_page = "quiz_management"
-            st.rerun()
+    try:
+        cursor.execute("SELECT COUNT(*) FROM users WHERE active = 1")
+        user_count = cursor.fetchone()[0]
+        
+        cursor.execute("SELECT COUNT(*) FROM modules WHERE active = 1")
+        module_count = cursor.fetchone()[0]
+        
+        cursor.execute("SELECT COUNT(*) FROM quizzes")
+        quiz_count = cursor.fetchone()[0]
+        
+        cursor.execute("SELECT SUM(points) FROM users WHERE role != 'admin'")
+        total_points = cursor.fetchone()[0] or 0
+        
+        col1, col2, col3, col4 = st.columns(4)
+        
+        with col1:
+            st.metric("Total Users", user_count, "Active users")
+        
+        with col2:
+            st.metric("Modules", module_count, "Published")
+        
+        with col3:
+            st.metric("Quiz Questions", quiz_count, "Available")
+        
+        with col4:
+            st.metric("Total Points Earned", total_points, "By all users")
+        
+        st.markdown("---")
+        
+        # Analytics charts
+        st.subheader("📊 System Analytics")
+        create_admin_analytics_charts()
+        
+        st.markdown("---")
+        
+        # Quick Actions
+        st.subheader("🚀 Quick Actions")
+        
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            if st.button("📚 Manage Content", use_container_width=True):
+                st.session_state.current_page = "content_management"
+                st.rerun()
+        
+        with col2:
+            if st.button("👥 Add User", use_container_width=True):
+                st.session_state.current_page = "user_management"
+                st.rerun()
+        
+        with col3:
+            if st.button("❓ Add Quiz", use_container_width=True):
+                st.session_state.current_page = "quiz_management"
+                st.rerun()
+    except Exception as e:
+        print(f"Error in admin dashboard: {e}")
+        st.error("Error loading dashboard data")
+    finally:
+        conn.close()
 
 def show_content_management():
     st.markdown('<div class="main-header"><h1>Content Management</h1></div>', unsafe_allow_html=True)
@@ -1728,44 +2428,45 @@ def show_content_management():
                 # Get full module data
                 full_module = get_module_content(module['id'])
                 
-                with st.form(f"edit_module_{module['id']}"):
-                    title = st.text_input("Title", value=full_module['title'])
-                    description = st.text_area("Description", value=full_module['description'], height=100)
-                    
-                    col1, col2 = st.columns(2)
-                    with col1:
-                        difficulty = st.selectbox("Difficulty", ["Beginner", "Intermediate", "Advanced"], 
-                                                index=["Beginner", "Intermediate", "Advanced"].index(full_module['difficulty']))
-                    with col2:
-                        category = st.selectbox("Category", [
-                            "Fundamentals", "Legal Framework", "Property Measurements",
-                            "Valuation & Finance", "Technical & Construction", "Transactions & Documentation",
-                            "Property Management", "Brokerage & Agency", "Digital Tools", "Case Studies", "Sustainability"
-                        ])
-                    
-                    youtube_url = st.text_input("YouTube URL", value=full_module['youtube_url'] or "", 
-                                              help="Enter YouTube video URL for this module")
-                    
-                    content = st.text_area("Module Content (Markdown)", value=full_module['content'] or "", 
-                                         height=300, help="Use Markdown formatting for better presentation")
-                    
-                    col1, col2 = st.columns(2)
-                    
-                    with col1:
-                        if st.form_submit_button("💾 Update Module"):
-                            if update_module_content(module['id'], title, description, content, youtube_url):
-                                st.success("Module updated successfully!")
-                                st.rerun()
-                            else:
-                                st.error("Failed to update module")
-                    
-                    with col2:
-                        if st.form_submit_button("🗑️ Delete Module"):
-                            if delete_module(module['id']):
-                                st.success("Module deleted!")
-                                st.rerun()
-                            else:
-                                st.error("Failed to delete module")
+                if full_module:
+                    with st.form(f"edit_module_{module['id']}"):
+                        title = st.text_input("Title", value=full_module['title'])
+                        description = st.text_area("Description", value=full_module['description'], height=100)
+                        
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            difficulty = st.selectbox("Difficulty", ["Beginner", "Intermediate", "Advanced"], 
+                                                    index=["Beginner", "Intermediate", "Advanced"].index(full_module['difficulty']))
+                        with col2:
+                            category = st.selectbox("Category", [
+                                "Fundamentals", "Legal Framework", "Property Measurements",
+                                "Valuation & Finance", "Technical & Construction", "Transactions & Documentation",
+                                "Property Management", "Brokerage & Agency", "Digital Tools", "Case Studies", "Sustainability"
+                            ])
+                        
+                        youtube_url = st.text_input("YouTube URL", value=full_module['youtube_url'] or "", 
+                                                  help="Enter YouTube video URL for this module")
+                        
+                        content = st.text_area("Module Content (Markdown)", value=full_module['content'] or "", 
+                                             height=300, help="Use Markdown formatting for better presentation")
+                        
+                        col1, col2 = st.columns(2)
+                        
+                        with col1:
+                            if st.form_submit_button("💾 Update Module"):
+                                if update_module_content(module['id'], title, description, content, youtube_url):
+                                    st.success("Module updated successfully!")
+                                    st.rerun()
+                                else:
+                                    st.error("Failed to update module")
+                        
+                        with col2:
+                            if st.form_submit_button("🗑️ Delete Module"):
+                                if delete_module(module['id']):
+                                    st.success("Module deleted!")
+                                    st.rerun()
+                                else:
+                                    st.error("Failed to delete module")
     
     with tab2:
         st.subheader("Add New Module")
@@ -1824,20 +2525,21 @@ def show_content_management():
                 if improvement_request:
                     with st.spinner("AI is improving the content..."):
                         current_module = get_module_content(module_id)
-                        improved_content = deepseek_chat.improve_content(
-                            current_module['content'], 
-                            improvement_request
-                        )
-                        
-                        st.subheader("🎯 AI-Improved Content:")
-                        st.markdown(improved_content)
-                        
-                        if st.button("✅ Apply Improvements"):
-                            if update_module_content(module_id, current_module['title'], 
-                                                   current_module['description'], improved_content, 
-                                                   current_module['youtube_url']):
-                                st.success("Content updated with AI improvements!")
-                                st.rerun()
+                        if current_module:
+                            improved_content = deepseek_chat.improve_content(
+                                current_module['content'], 
+                                improvement_request
+                            )
+                            
+                            st.subheader("🎯 AI-Improved Content:")
+                            st.markdown(improved_content)
+                            
+                            if st.button("✅ Apply Improvements"):
+                                if update_module_content(module_id, current_module['title'], 
+                                                       current_module['description'], improved_content, 
+                                                       current_module['youtube_url']):
+                                    st.success("Content updated with AI improvements!")
+                                    st.rerun()
 
 def show_user_management():
     st.markdown('<div class="main-header"><h1>User Management</h1></div>', unsafe_allow_html=True)
@@ -1848,88 +2550,89 @@ def show_user_management():
         conn = get_db_connection()
         cursor = conn.cursor()
         
-        cursor.execute("""
-            SELECT id, username, email, role, created_date, last_login, active, points, badges
-            FROM users
-            ORDER BY created_date DESC
-        """)
-        
-        users = cursor.fetchall()
-        conn.close()
-        
-        # User statistics
-        col1, col2, col3 = st.columns(3)
-        
-        total_users = len(users)
-        active_users = len([u for u in users if u[6] == 1])
-        admin_users = len([u for u in users if u[3] == 'admin'])
-        
-        with col1:
-            st.metric("Total Users", total_users)
-        with col2:
-            st.metric("Active Users", active_users)
-        with col3:
-            st.metric("Admin Users", admin_users)
-        
-        st.markdown("---")
-        
-        st.subheader(f"All Users ({total_users})")
-        
-        for user in users:
-            role_emoji = {"admin": "👑", "student": "📚", "professional": "💼"}
-            emoji = role_emoji.get(user[3], "👤")
-            status = "🟢 Active" if user[6] else "🔴 Inactive"
+        try:
+            cursor.execute("""
+                SELECT id, username, email, role, created_date, last_login, active, points, badges
+                FROM users
+                ORDER BY created_date DESC
+            """)
             
-            badges = json.loads(user[8]) if user[8] else []
+            users = cursor.fetchall()
             
-            with st.expander(f"{emoji} {user[1]} ({user[3]}) - {status} - 🏆 {user[7] or 0} points"):
-                col1, col2 = st.columns(2)
+            # User statistics
+            col1, col2, col3 = st.columns(3)
+            
+            total_users = len(users)
+            active_users = len([u for u in users if u[6] == 1])
+            admin_users = len([u for u in users if u[3] == 'admin'])
+            
+            with col1:
+                st.metric("Total Users", total_users)
+            with col2:
+                st.metric("Active Users", active_users)
+            with col3:
+                st.metric("Admin Users", admin_users)
+            
+            st.markdown("---")
+            
+            st.subheader(f"All Users ({total_users})")
+            
+            for user in users:
+                role_emoji = {"admin": "👑", "student": "📚", "professional": "💼"}
+                emoji = role_emoji.get(user[3], "👤")
+                status = "🟢 Active" if user[6] else "🔴 Inactive"
                 
-                with col1:
-                    st.write(f"**Email:** {user[2]}")
-                    st.write(f"**Role:** {user[3].title()}")
-                    st.write(f"**Joined:** {user[4]}")
-                    st.write(f"**Points:** {user[7] or 0}")
+                badges = json.loads(user[8]) if user[8] else []
                 
-                with col2:
-                    st.write(f"**Last Login:** {user[5] or 'Never'}")
-                    st.write(f"**Status:** {'Active' if user[6] else 'Inactive'}")
-                    st.write(f"**Badges:** {len(badges)}")
+                with st.expander(f"{emoji} {user[1]} ({user[3]}) - {status} - 🏆 {user[7] or 0} points"):
+                    col1, col2 = st.columns(2)
                     
-                    if badges:
-                        for badge in badges[:3]:  # Show first 3 badges
-                            st.markdown(f'<span class="badge">🏅 {badge}</span>', unsafe_allow_html=True)
-                
-                # Admin actions
-                col1, col2, col3 = st.columns(3)
-                
-                with col1:
-                    if user[3] != 'admin':  # Don't allow deactivating admin users
-                        if st.button(f"{'Deactivate' if user[6] else 'Activate'}", key=f"toggle_{user[0]}"):
-                            conn = get_db_connection()
-                            cursor = conn.cursor()
-                            cursor.execute("UPDATE users SET active = ? WHERE id = ?", (0 if user[6] else 1, user[0]))
-                            conn.commit()
-                            conn.close()
-                            st.success(f"User {'deactivated' if user[6] else 'activated'} successfully!")
+                    with col1:
+                        st.write(f"**Email:** {user[2]}")
+                        st.write(f"**Role:** {user[3].title()}")
+                        st.write(f"**Joined:** {user[4]}")
+                        st.write(f"**Points:** {user[7] or 0}")
+                    
+                    with col2:
+                        st.write(f"**Last Login:** {user[5] or 'Never'}")
+                        st.write(f"**Status:** {'Active' if user[6] else 'Inactive'}")
+                        st.write(f"**Badges:** {len(badges)}")
+                        
+                        if badges:
+                            for badge in badges[:3]:  # Show first 3 badges
+                                st.markdown(f'<span class="badge">🏅 {badge}</span>', unsafe_allow_html=True)
+                    
+                    # Admin actions
+                    col1, col2, col3 = st.columns(3)
+                    
+                    with col1:
+                        if user[3] != 'admin':  # Don't allow deactivating admin users
+                            if st.button(f"{'Deactivate' if user[6] else 'Activate'}", key=f"toggle_{user[0]}"):
+                                cursor.execute("UPDATE users SET active = ? WHERE id = ?", (0 if user[6] else 1, user[0]))
+                                conn.commit()
+                                st.success(f"User {'deactivated' if user[6] else 'activated'} successfully!")
+                                st.rerun()
+                        else:
+                            st.info("Admin user")
+                    
+                    with col2:
+                        points_to_award = st.number_input(f"Award Points", min_value=0, max_value=1000, value=50, key=f"points_{user[0]}")
+                        if st.button("🏆 Award", key=f"award_{user[0]}"):
+                            award_points(user[0], points_to_award, "Admin Awarded Points")
+                            st.success(f"Awarded {points_to_award} points!")
                             st.rerun()
-                    else:
-                        st.info("Admin user")
-                
-                with col2:
-                    points_to_award = st.number_input(f"Award Points", min_value=0, max_value=1000, value=50, key=f"points_{user[0]}")
-                    if st.button("🏆 Award", key=f"award_{user[0]}"):
-                        award_points(user[0], points_to_award, "Admin Awarded Points")
-                        st.success(f"Awarded {points_to_award} points!")
-                        st.rerun()
-                
-                with col3:
-                    badge_options = ["Excellence", "Top Performer", "Quick Learner", "Dedicated Student", "Expert Level"]
-                    selected_badge = st.selectbox("Award Badge", badge_options, key=f"badge_{user[0]}")
-                    if st.button("🏅 Badge", key=f"badge_btn_{user[0]}"):
-                        award_badge(user[0], selected_badge)
-                        st.success(f"Badge '{selected_badge}' awarded!")
-                        st.rerun()
+                    
+                    with col3:
+                        badge_options = ["Excellence", "Top Performer", "Quick Learner", "Dedicated Student", "Expert Level"]
+                        selected_badge = st.selectbox("Award Badge", badge_options, key=f"badge_{user[0]}")
+                        if st.button("🏅 Badge", key=f"badge_btn_{user[0]}"):
+                            award_badge(user[0], selected_badge)
+                            st.success(f"Badge '{selected_badge}' awarded!")
+                            st.rerun()
+        except Exception as e:
+            st.error(f"Error loading users: {e}")
+        finally:
+            conn.close()
     
     with tab2:
         st.subheader("Add New User")
@@ -2064,383 +2767,3 @@ def show_quiz_management():
                                         q['option_b'],
                                         q['option_c'],
                                         q['option_d'],
-                                        q['correct_answer'],
-                                        q['explanation']
-                                    ):
-                                        st.success(f"Question {i} added successfully!")
-                                        st.rerun()
-                        
-                        if st.button("✅ Add All Generated Questions"):
-                            added_count = 0
-                            for q in result['questions']:
-                                if add_quiz_question(
-                                    selected_module[0],
-                                    q['question'],
-                                    q['option_a'],
-                                    q['option_b'],
-                                    q['option_c'],
-                                    q['option_d'],
-                                    q['correct_answer'],
-                                    q['explanation']
-                                ):
-                                    added_count += 1
-                            
-                            st.success(f"Added {added_count} questions successfully!")
-                            st.rerun()
-                    else:
-                        st.error("Failed to generate questions. Please try again.")
-
-def show_content_research():
-    st.markdown('<div class="main-header"><h1>🔍 Content Research</h1></div>', unsafe_allow_html=True)
-    
-    researcher = ContentResearcher()
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.subheader("Research Topics")
-        selected_topics = st.multiselect(
-            "Select Topics to Research", 
-            researcher.available_topics,
-            help="Select one or more topics to research for content creation"
-        )
-        
-        if st.button("🔍 Start Research", use_container_width=True):
-            if selected_topics:
-                with st.spinner("Researching content..."):
-                    results = researcher.run_research(selected_topics)
-                    st.session_state.research_results = results
-                    st.success(f"Research completed for {len(selected_topics)} topics!")
-            else:
-                st.warning("Please select at least one topic to research")
-    
-    with col2:
-        st.subheader("Research Results")
-        
-        if 'research_results' in st.session_state and st.session_state.research_results:
-            for topic, content in st.session_state.research_results.items():
-                with st.expander(f"📋 {topic}"):
-                    st.write("**Key Points:**")
-                    for i, point in enumerate(content['key_points'], 1):
-                        st.write(f"{i}. {point}")
-                    
-                    st.write("**Sources:**")
-                    for source in content['sources']:
-                        st.write(f"• [{source['title']}]({source['url']}) - {source['date']}")
-                    
-                    st.write(f"**Last Updated:** {content.get('last_updated', 'N/A')}")
-                    
-                    if st.button(f"💾 Save Research", key=f"research_{topic}"):
-                        # Save research to database
-                        conn = get_db_connection()
-                        cursor = conn.cursor()
-                        
-                        cursor.execute("""
-                            INSERT INTO content_research (topic, content, sources, created_date, status)
-                            VALUES (?, ?, ?, ?, 'completed')
-                        """, (
-                            topic,
-                            json.dumps(content['key_points']),
-                            json.dumps(content['sources']),
-                            datetime.now().isoformat()
-                        ))
-                        
-                        conn.commit()
-                        conn.close()
-                        
-                        st.success(f"Research for '{topic}' saved to database!")
-        else:
-            st.info("No research results yet. Select topics and click 'Start Research' to begin.")
-
-def show_analytics():
-    """Enhanced analytics page with comprehensive charts"""
-    st.markdown('<div class="main-header"><h1>📈 System Analytics</h1></div>', unsafe_allow_html=True)
-    
-    create_admin_analytics_charts()
-    
-    # Additional analytics
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    
-    # User points distribution
-    cursor.execute("""
-        SELECT username, points 
-        FROM users 
-        WHERE role != 'admin' AND points > 0
-        ORDER BY points DESC
-        LIMIT 10
-    """)
-    
-    top_users = cursor.fetchall()
-    
-    if top_users:
-        st.subheader("🏆 Top Performers")
-        
-        df_top = pd.DataFrame(top_users, columns=['Username', 'Points'])
-        
-        fig3 = px.bar(
-            df_top,
-            x='Username',
-            y='Points',
-            title='Top 10 Users by Points',
-            color='Points',
-            color_continuous_scale='viridis'
-        )
-        
-        st.plotly_chart(fig3, use_container_width=True)
-    
-    # Quiz performance by module
-    cursor.execute("""
-        SELECT m.title, AVG(p.quiz_score) as avg_score, COUNT(p.user_id) as attempts
-        FROM modules m
-        LEFT JOIN user_progress p ON m.id = p.module_id AND p.quiz_score > 0
-        WHERE m.active = 1
-        GROUP BY m.id, m.title
-    """)
-    
-    quiz_performance = cursor.fetchall()
-    
-    if quiz_performance:
-        st.subheader("📊 Quiz Performance by Module")
-        
-        df_quiz = pd.DataFrame(quiz_performance, columns=['Module', 'Average Score', 'Attempts'])
-        df_quiz['Average Score'] = df_quiz['Average Score'].fillna(0)
-        
-        fig4 = px.scatter(
-            df_quiz,
-            x='Attempts',
-            y='Average Score',
-            size='Attempts',
-            hover_name='Module',
-            title='Quiz Performance vs Attempts'
-        )
-        
-        st.plotly_chart(fig4, use_container_width=True)
-    
-    conn.close()
-
-def show_ai_assistant():
-    st.markdown('<div class="main-header"><h1>🤖 AI Assistant</h1></div>', unsafe_allow_html=True)
-    
-    st.info("💡 Ask me anything about real estate! I can help with RERA compliance, property valuation, legal frameworks, and more. I can also help generate content and quiz questions!")
-    
-    # Initialize chat history
-    if 'chat_history' not in st.session_state:
-        st.session_state.chat_history = []
-    
-    # Get DeepSeek API key
-    try:
-        api_key = st.secrets.get("DEEPSEEK_API_KEY", "sk-54bd3323c4d14bf08b941f0bff7a47d5")
-    except:
-        api_key = "sk-54bd3323c4d14bf08b941f0bff7a47d5"
-    
-    deepseek_chat = DeepSeekChat(api_key)
-    
-    # Chat interface
-    st.markdown('<div class="chat-container">', unsafe_allow_html=True)
-    
-    # Display chat history
-    for message in st.session_state.chat_history:
-        if message['role'] == 'user':
-            st.markdown(f"**You:** {message['content']}")
-            st.markdown("---")
-        else:
-            st.markdown(f"**🤖 AI Assistant:** {message['content']}")
-            st.markdown("---")
-    
-    st.markdown('</div>', unsafe_allow_html=True)
-    
-    # Chat input
-    col1, col2 = st.columns([4, 1])
-    
-    with col1:
-        user_input = st.text_input(
-            "Ask me anything about real estate:", 
-            key="chat_input", 
-            placeholder="e.g., Generate 5 quiz questions about RERA compliance"
-        )
-    
-    with col2:
-        send_clicked = st.button("Send", use_container_width=True)
-    
-    if (send_clicked or user_input) and user_input:
-        # Add user message to history
-        st.session_state.chat_history.append({
-            'role': 'user',
-            'content': user_input
-        })
-        
-        # Get AI response
-        with st.spinner("🤔 Thinking..."):
-            response = deepseek_chat.get_response(user_input)
-            
-            # Add AI response to history
-            st.session_state.chat_history.append({
-                'role': 'assistant',
-                'content': response
-            })
-        
-        # Clear input and rerun
-        st.session_state.chat_input = ""
-        st.rerun()
-    
-    # Quick questions with gamification focus
-    st.markdown("---")
-    st.subheader("💡 Quick Questions")
-    
-    quick_questions = [
-        "What is RERA and how does it protect homebuyers?",
-        "Generate 5 quiz questions about property valuation methods",
-        "How do I calculate EMI for home loans?",
-        "What are the latest FSI regulations in Mumbai?",
-        "Create content outline for real estate investment module",
-        "What are the tax benefits of buying property in India?",
-        "How do I conduct due diligence before buying property?",
-        "Generate assessment questions for RERA compliance"
-    ]
-    
-    cols = st.columns(2)
-    
-    for i, question in enumerate(quick_questions):
-        with cols[i % 2]:
-            if st.button(question, key=f"quick_{i}"):
-                # Add question to chat
-                st.session_state.chat_history.append({
-                    'role': 'user',
-                    'content': question
-                })
-                
-                # Get AI response
-                with st.spinner("Getting answer..."):
-                    response = deepseek_chat.get_response(question)
-                    
-                    st.session_state.chat_history.append({
-                        'role': 'assistant',
-                        'content': response
-                    })
-                
-                # Award points for using AI assistant
-                award_points(st.session_state.user_id, 5, "Used AI Assistant")
-                st.rerun()
-
-def show_progress_page():
-    st.markdown('<div class="main-header"><h1>📊 Your Learning Progress</h1></div>', unsafe_allow_html=True)
-    
-    # User stats with gamification
-    user_stats = get_user_stats(st.session_state.user_id)
-    
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        st.metric("🏆 Total Points", user_stats['points'])
-    
-    with col2:
-        st.metric("🏅 Badges Earned", len(user_stats['badges']))
-    
-    with col3:
-        st.metric("🔥 Learning Streak", f"{user_stats['streak_days']} days")
-    
-    st.markdown("---")
-    
-    # Progress chart
-    st.subheader("📈 Your Module Progress")
-    create_user_progress_chart(st.session_state.user_id)
-    
-    st.markdown("---")
-    
-    # Module progress details
-    st.subheader("📚 Detailed Progress")
-    
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    
-    cursor.execute("""
-        SELECT m.title, m.difficulty, COALESCE(p.quiz_score, 0) as score, p.quiz_attempts
-        FROM modules m
-        LEFT JOIN user_progress p ON m.id = p.module_id AND p.user_id = ?
-        WHERE m.active = 1
-        ORDER BY m.order_index
-    """, (st.session_state.user_id,))
-    
-    progress_data = cursor.fetchall()
-    conn.close()
-    
-    for module in progress_data:
-        difficulty_color = {"Beginner": "🟢", "Intermediate": "🟡", "Advanced": "🔴"}
-        color = difficulty_color.get(module[1], "📚")
-        
-        score = module[2] or 0
-        attempts = module[3] or 0
-        
-        status = "✅ Completed" if score >= 70 else "📖 In Progress" if score > 0 else "⚪ Not Started"
-        
-        st.markdown(f"""
-        <div class="module-card">
-            <h4>{color} {module[0]}</h4>
-            <p><strong>Difficulty:</strong> {module[1]} | <strong>Status:</strong> {status}</p>
-            <p><strong>Best Score:</strong> {score:.1f}% | <strong>Attempts:</strong> {attempts}</p>
-        </div>
-        """, unsafe_allow_html=True)
-
-def main():
-    # Initialize database
-    try:
-        init_database()
-    except Exception as e:
-        st.error(f"Database initialization error: {str(e)}")
-        st.stop()
-    
-    # Sidebar
-    with st.sidebar:
-        if not st.session_state.authenticated:
-            if st.session_state.get('show_register', False):
-                show_registration_form()
-            else:
-                show_login_form()
-        else:
-            show_navigation()
-    
-    # Main content
-    if not st.session_state.authenticated:
-        show_welcome_page()
-    else:
-        page = st.session_state.get('current_page', 'dashboard')
-        
-        try:
-            if page == 'dashboard':
-                if st.session_state.user_role == 'admin':
-                    show_admin_dashboard()
-                else:
-                    show_user_dashboard()
-            elif page == 'admin_dashboard':
-                show_admin_dashboard()
-            elif page == 'content_management':
-                show_content_management()
-            elif page == 'user_management':
-                show_user_management()
-            elif page == 'quiz_management':
-                show_quiz_management()
-            elif page == 'content_research':
-                show_content_research()
-            elif page == 'analytics':
-                show_analytics()
-            elif page == 'module_content':
-                show_module_content()
-            elif page == 'progress':
-                show_progress_page()
-            elif page == 'quiz':
-                show_quiz()
-            elif page == 'achievements':
-                show_achievements()
-            elif page == 'ai_assistant':
-                show_ai_assistant()
-            else:
-                show_user_dashboard()
-        except Exception as e:
-            st.error(f"Page error: {str(e)}")
-            st.info("Redirecting to dashboard...")
-            st.session_state.current_page = 'dashboard'
-            st.rerun()
-
-if __name__ == "__main__":
-    main()
